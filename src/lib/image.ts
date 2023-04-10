@@ -5,7 +5,7 @@ import {
   INTERNAL_SERVER_ERROR_MESSAGE,
 } from "@/utils/constants";
 import { deleteImage, uploadImage } from "@/lib/cloudinary";
-import { ConversionModel } from "@/types";
+import { ConversionModel, ConversionModelAllButOpenJourney } from "@/types";
 import {
   ReplicatePredictionResponse,
   generateGfpGan,
@@ -17,7 +17,7 @@ import {
 import { backOff } from "exponential-backoff";
 import { updateImageGenerationsRemaining } from "./supabase";
 
-type ImageGenerationResult = {
+export type ImageGenerationResult = {
   success: true;
   imageGenerationsRemaining: number;
   fileUrl: string;
@@ -25,6 +25,77 @@ type ImageGenerationResult = {
   success: false;
   errorMessage: string;
 };
+
+// The body of the request sent by QStash
+export type ImageBody = {
+  chatId: number;
+  messageId: number;
+  fileId: string;
+  userId: number;
+  conversionModel: ConversionModelAllButOpenJourney
+} | {
+  chatId: number;
+  messageId: number;
+  userId: number;
+  conversionModel: ConversionModel.OPENJOURNEY; 
+  prompt: string;
+}
+
+/**
+ * Helper function to check if request body has a fileId
+ * 
+ * @param obj 
+ * @returns 
+ */
+export const hasFileId = (obj: any): obj is {fileId: string} => {
+  return 'fileId' in obj;
+}
+
+/**
+ * Helper function to check if request body has a prompt
+ * 
+ * @param obj 
+ * @returns 
+ */
+export const hasPrompt = (obj: any): obj is {prompt: string} => {
+  return 'prompt' in obj;
+}
+
+/**
+ * Parse the request body and return the appropriate type
+ * 
+ * @param body 
+ * @returns 
+ */
+export const parseRequestBody = (body: any): ImageBody => {
+  const { chatId, messageId, fileId, userId, conversionModel, prompt } = body;
+
+  if (hasFileId(body) && hasPrompt(body)) {
+    throw new Error('Invalid request body: both fileId and prompt properties are present');
+  }
+
+  if (hasFileId(body)) {
+    return {
+      chatId,
+      messageId,
+      fileId,
+      userId,
+      conversionModel
+    };
+  }
+
+  if (hasPrompt(body)) {
+    return {
+      chatId,
+      messageId,
+      userId,
+      conversionModel,
+      prompt
+    };
+  }
+
+  throw new Error('Invalid request body: neither fileId nor prompt property is present');
+}
 
 /**
  * Update the image generations remaining for the user in redis
@@ -201,9 +272,9 @@ export async function processImage(
 
       let generationResponse: ReplicatePredictionResponse = {} as any;
 
-      if (conversionModel == ConversionModel["controlnet-hough"]) {
+      if (conversionModel == ConversionModel.CONTROLNET_HOUGH) {
         generationResponse = await generateRoom(cloudinaryUrl);
-      } else if (conversionModel == ConversionModel["controlnet-scribble"]) {
+      } else if (conversionModel == ConversionModel.CONTROLNET_SCRIBBLE) {
         generationResponse = await generateScribble(cloudinaryUrl);
       } else {
         generationResponse = await generateGfpGan(cloudinaryUrl);

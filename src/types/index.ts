@@ -19,8 +19,10 @@ export interface CustomTelegramContext extends Context {
 export type UserInfoCache = Pick<SelectUser, 'tokens' | 'image_generations_remaining'>;
 
 export enum ConversionModel {
-    'controlnet-hough' = 'controlnet-hough',
-    'controlnet-scribble' = 'controlnet-scribble',
-    'gfpgan' = 'gfpgan',
-    'openjourney' = 'openjourney',
+    CONTROLNET_HOUGH = 'CONTROLNET_HOUGH',
+    CONTROLNET_SCRIBBLE = 'CONTROLNET_SCRIBBLE',
+    GFPGAN = 'GFPGAN',
+    OPENJOURNEY = 'OPENJOURNEY',
 }
+
+export type ConversionModelAllButOpenJourney = Exclude<ConversionModel, ConversionModel.OPENJOURNEY>;

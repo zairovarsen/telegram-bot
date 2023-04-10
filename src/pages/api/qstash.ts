@@ -61,7 +61,16 @@ export default async function handler(
   }
 
   const body = JSON.parse(rawBody);
-  const { chatId, messageId, mimeType, fileId, userId, conversionModel, prompt } = body;
+  const {
+    chatId,
+    messageId,
+    mimeType,
+    fileId,
+    userId,
+    conversionModel,
+    prompt,
+    text,
+  } = body;
   console.log(body);
 
   if (mimeType == "application/pdf") {
@@ -114,11 +123,7 @@ export default async function handler(
       const imagePath = `https://api.telegram.org/file/bot${process.env.NEXT_PUBLIC_TELEGRAM_TOKEN}/${file.file_path}`;
       console.log(imagePath);
 
-      const image = await processImage(
-        imagePath,
-        userId,
-        conversionModel
-      );
+      const image = await processImage(imagePath, userId, conversionModel);
 
       if (!image.success) {
         await bot.telegram.sendMessage(chatId, image.errorMessage, {
@@ -135,7 +140,7 @@ export default async function handler(
             return bot.telegram.sendDocument(chatId, image.fileUrl as string, {
               caption: `\n${GENERATED_IMAGE_MESSAGE}`,
               reply_to_message_id: messageId,
-            });            
+            });
           },
           {
             startingDelay: 1000,
@@ -158,52 +163,59 @@ export default async function handler(
       console.error(err);
       res.status(500).send(INTERNAL_SERVER_ERROR_MESSAGE);
     }
-  } else if (mimeType == 'text/plain') {
-    try {
-
-      const image = await processImagePromptOpenJourney(prompt, userId);
-
-      if (!image.success) {
-        await bot.telegram.sendMessage(chatId, image.errorMessage, {
-          reply_to_message_id: messageId,
-        });
-        res.status(200).send("OK");
-        return;
-      }
-
+  } else if (mimeType == "text/plain") {
+    if (text == "Imagine") {
       try {
-        // Sometimes the bot will fail to send the image, so we retry a few times
-        await backOff(
-          () => {
-            return bot.telegram.sendDocument(chatId, image.fileUrl as string, {
-              caption: `\n${GENERATED_IMAGE_MESSAGE}`,
-              reply_to_message_id: messageId,
-            });            
-          },
-          {
-            startingDelay: 1000,
-            numOfAttempts: 3,
-            retry(e, attemptNumber) {
-              console.error(`Attempt ${attemptNumber} failed`);
-              console.error(e);
-              return true;
+        const image = await processImagePromptOpenJourney(prompt, userId);
+
+        if (!image.success) {
+          await bot.telegram.sendMessage(chatId, image.errorMessage, {
+            reply_to_message_id: messageId,
+          });
+          res.status(200).send("OK");
+          return;
+        }
+
+        try {
+          // Sometimes the bot will fail to send the image, so we retry a few times
+          await backOff(
+            () => {
+              return bot.telegram.sendDocument(
+                chatId,
+                image.fileUrl as string,
+                {
+                  caption: `\n${GENERATED_IMAGE_MESSAGE}`,
+                  reply_to_message_id: messageId,
+                }
+              );
             },
-          }
+            {
+              startingDelay: 1000,
+              numOfAttempts: 3,
+              retry(e, attemptNumber) {
+                console.error(`Attempt ${attemptNumber} failed`);
+                console.error(e);
+                return true;
+              },
+            }
+          );
+        } catch (err) {
+          console.error(err);
+        }
+        console.log(
+          `Remaining imageGenerations: ${image.imageGenerationsRemaining || 0}`
         );
+        res.status(200).send("OK");
       } catch (err) {
         console.error(err);
+        res.status(500).send(INTERNAL_SERVER_ERROR_MESSAGE);
       }
-      console.log(
-        `Remaining imageGenerations: ${image.imageGenerationsRemaining || 0}`
-      );
-      res.status(200).send("OK");
-    } catch (err) {
-      console.error(err);
-      res.status(500).send(INTERNAL_SERVER_ERROR_MESSAGE);
+    } else {
+      console.error("Unsupported text type");
+      res.status(500).send("Internal Server Error");
+      return;
     }
-  }
-  
-  else {
+  } else {
     console.log("Unsupported mime type");
     res.status(200).send("OK");
   }

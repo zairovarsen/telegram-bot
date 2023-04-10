@@ -1,12 +1,7 @@
-import { backOff } from "exponential-backoff";
-import { isProcessed } from "@/utils/isProcessed";
 import {
-  CONTEXT_TOKENS_CUTOFF,
   HELP_MESSAGE,
   WELCOME_MESSAGE,
-  MAX_PROMPT_LENGTH,
   TELEGRAM_FILE_SIZE_LIMIT,
-  TOKEN_LIMIT,
   INVALID_COMMAND_MESSAGE,
   SUPPORT_HELP_MESSAGE,
   TERMS_AND_CONDITIONS,
@@ -35,45 +30,27 @@ import {
   getEmbeddingsRateLimitResponse,
   imageGenerationRateLimit,
 } from "@/lib/rate-limit";
-import { isValidUrl } from "@/utils/isValidUrl";
 import { NextApiRequest, NextApiResponse } from "next";
-import { CreateEmbeddingResponse, OpenAIApi } from "openai";
-import { Context, Markup, Telegraf } from "telegraf";
-import { message } from "telegraf/filters";
 // import { generateEmbeddings } from "@/lib/generateEmbeddings";
-import { getUserUrls } from "@/utils/getUserUrls";
-import { createEmbedding, createModeration, getPayload } from "@/lib/openai";
 import {
-  SelectUser,
   createNewUser,
   getUserDataFromDatabase,
-  supabaseClient,
   createNewPayment,
   updateImageAndTokensTotal,
 } from "@/lib/supabase";
 import { bytesToMegabytes } from "@/utils/bytesToMegabytes";
 import {
   getRedisClient,
-  getUserEmbeddingsMonthTokenCountKey,
-  hget,
   hgetAll,
   hmset,
-  hset,
   redlock,
-  safeGetObject,
-  set,
-  setWithExpiration,
 } from "@/lib/redis";
 
-import { EventEmitter } from "events";
-import { createReadStream, unlinkSync, writeFileSync } from "fs";
-import { convertToWav } from "@/utils/convertToWav";
 import { ConversionModel, UserInfoCache } from "@/types";
-import { LabeledPrice, PreCheckoutQuery } from "telegraf/typings/core/types/typegram";
+import { PreCheckoutQuery } from "telegraf/typings/core/types/typegram";
 import { qStash } from "@/lib/qstash";
 import { bot } from "@/lib/bot";
 import { INSUFFICEINT_IMAGE_GENERATIONS_MESSAGE } from "@/utils/constants";
-import { updateUserImageGenerationsRemainingRedis } from "@/lib/image";
 
 const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
   // eventEmitter.on(
@@ -338,6 +315,7 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
             mimeType: "text/plain",
             userId: userId,
             prompt: text,
+            text:data
           },
           retries: 0,
         });

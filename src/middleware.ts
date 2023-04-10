@@ -10,7 +10,6 @@ export const config = {
 
 
 export default async function middleware(req: NextRequest) {
-  // get origin
   const { url } = req;
   let ip = req.ip ?? req.headers.get('x-real-ip')
   const forwardedFor = req.headers.get('x-forwarded-for')
@@ -29,14 +28,22 @@ export default async function middleware(req: NextRequest) {
     return new NextResponse("ok", { status: 200 });
   }
 
+  // check if the request is for upstash and if the signature is present
+  if (url && (url.includes("/api/qstash/"))) {
+    const signature = req.headers.get("upstash-signature");
+    if (signature) {
+      return NextResponse.next();
+    }
+  }
+
   // check if the request is for the api and if the secret key is correct
-  if (url && (url.includes("/api/tlg/") || url.includes("/api/qstash"))) {
+  if (url && (url.includes("/api/tlg/"))) {
     const lastPart = url.split("/").pop();
     if (lastPart == process.env.NEXT_SECRET_KEY) {
       return NextResponse.next();
     }
   }
 
-  return NextResponse.next();
-  // return new NextResponse("Not Found", { status: 404 });
+  
+  return new NextResponse("Forbidden", { status: 403 }); 
 }
