@@ -9,23 +9,34 @@ import {
   UNABLE_TO_PROCESS_PDF_MESSAGE,
 } from "@/utils/constants";
 import GPT3Tokenizer from "gpt3-tokenizer";
-import { redlock, getRedisClient } from "@/lib/redis";
+import { redlock, getRedisClient, hget } from "@/lib/redis";
 import { InsertDocuments } from "@/lib/supabase";
 import { createEmbedding } from "@/lib/openai";
 import { backOff } from "exponential-backoff";
 
-type EmbeddingResult = {
-  success: boolean;
-  errorMessage?: string | string[];
+export type PdfBody = {
+  chatId: number;
+  messageId: number;
+  fileId: string;
+  userId: number;
+};
+
+export type EmbeddingResult = {
+  success: true;
   fileUrl?: string;
-  tokenCount?: number;
+  tokenCount: number;
+} | {
+  success: false;
+  errorMessage: string | string[];
 };
 
 type DocumentGenerationResult = {
-  success: boolean;
-  documents?: Document[];
-  errorMessage?: string;
-};
+  success: true;
+  documents: Document[];
+} | {
+  success: false;
+  errorMessage: string;
+}
 
 // TODO: Consider adding checksum to avoid duplicate processing, error detection, etc. Food for thought.
 
@@ -112,120 +123,137 @@ const generateDocuments = async (
  */
 export async function processPdf(
   pdfPath: string,
-  totalTokens: number,
   userId: number
 ): Promise<EmbeddingResult> {
-  const userLockResource = `locks:user:pdf:${userId}`;
-  // Acquire a lock on the user resource
-  // TODO: think of a good TTL value, 5 minutes for now
-  let lock = await redlock.acquire([userLockResource], 5 * 60 * 1000);
-  let embeddingsTokenCount = 0;
-
-  const embeddingsData: InsertDocuments[] = [];
-  const errorMessages: string[] = [];
-
+  const userLockResource = `locks:user:token:${userId}`;
   try {
-    const documents = await generateDocuments(pdfPath, totalTokens);
-    if (!documents.success) {
-      return {
-        success: false,
-        errorMessage: documents.errorMessage,
-      };
-    }
+    // Acquire a lock on the user resource
+    // TODO: think of a good TTL value, 5 minutes for now
+    const key = `user:${userId}`;
+    let lock = await redlock.acquire([userLockResource], 5 * 60 * 1000);
+    let embeddingsTokenCount = 0;
 
-    if (!documents.documents || documents.documents.length === 0) {
-      return {
-        success: false,
-        errorMessage: UNABLE_TO_PROCESS_PDF_MESSAGE,
-      };
-    }
+    const embeddingsData: InsertDocuments[] = [];
+    const errorMessages: string[] = [];
 
-    for (const { url, body } of documents.documents) {
-      const input = body.replace(/\n/g, " ");
-
-      // Ignore content short than MIN_CONTENT_LENGTH
-      if (input.length < MIN_CONTENT_LENGTH) {
-        continue;
+    try {
+      const totalTokens = parseInt((await hget(key, "tokens")) || "0");
+    
+      if (totalTokens <= 0) {
+        return {
+          success: false,
+          errorMessage: INSUFFICIENT_TOKENS_MESSAGE,
+        };
       }
 
-      try {
-        // Retry with exponential backoff in case of error. Typical cause is
-        // too_many_requests.
-        const embeddingResult = await backOff(
-          () => createEmbedding({ input, model: "text-embedding-ada-002" }),
-          {
-            startingDelay: 10000,
-            numOfAttempts: 10,
-          }
-        );
-
-        console.log(`Embedding result: ${JSON.stringify(embeddingResult)}`);
-
-        embeddingsTokenCount += embeddingResult?.usage?.total_tokens ?? 0;
-        console.log(`Embedding token count: ${embeddingsTokenCount}`);
-        console.log(`Embedding: ${embeddingResult?.data[0].embedding}`);
-
-        // Store the emedding in Postgres db.
-        embeddingsData.push({
-          user_id: userId,
-          content: input,
-          token_count: embeddingResult?.usage.total_tokens ?? 0,
-          embedding: embeddingResult?.data[0].embedding,
-          url,
-        });
-      } catch (error) {
-        const snippet = input.slice(0, 20);
-        console.error(`Error ${error}`);
-        errorMessages.push(
-          `Unable to generate embeddings for section starting with '${snippet}...': ${error}`
-        );
+      const documents = await generateDocuments(pdfPath, totalTokens);
+      if (!documents.success) {
+        return {
+          success: false,
+          errorMessage: documents.errorMessage,
+        };
       }
-    }
 
-    if (embeddingsData.length === 0) {
-      return {
-        success: false,
-        errorMessage: UNABLE_TO_PROCESS_PDF_MESSAGE,
-      };
-    }
+      if (!documents.documents || documents.documents.length === 0) {
+        return {
+          success: false,
+          errorMessage: UNABLE_TO_PROCESS_PDF_MESSAGE,
+        };
+      }
 
-    let newTokenCountTotal = totalTokens - embeddingsTokenCount;
-    if (newTokenCountTotal < 0) {
-      console.error(
-        `There might be a bug in the code. Beucase the new token count is negative: ${newTokenCountTotal}, totalTokens: ${totalTokens}, embeddingsTokenCount: ${embeddingsTokenCount}`
-      );
-      newTokenCountTotal = 0;
-    }
+      for (const { url, body } of documents.documents) {
+        const input = body.replace(/\n/g, " ");
 
-    // Save the embeddings in the database
-    const createDocumentsResponseBatch = await createDocumentsBatch(
-      embeddingsData
-    );
-    if (!createDocumentsResponseBatch) {
-      console.error(`Unable to save embeddings in batch the database`);
-      // Try one by one
-      for (const embedding of embeddingsData) {
-        const createDocumentsResponse = await createDocumentsBatch([embedding]);
-        if (!createDocumentsResponse) {
-          console.error(`Unable to save embedding in the database`);
-          errorMessages.push(`Unable to save embedding in the database`);
-          return {
-            success: false,
-            errorMessage: errorMessages,
-          };
+        // Ignore content short than MIN_CONTENT_LENGTH
+        if (input.length < MIN_CONTENT_LENGTH) {
+          continue;
+        }
+
+        try {
+          // Retry with exponential backoff in case of error. Typical cause is
+          // too_many_requests.
+          const embeddingResult = await backOff(
+            () => createEmbedding({ input, model: "text-embedding-ada-002" }),
+            {
+              startingDelay: 10000,
+              numOfAttempts: 10,
+            }
+          );
+
+          console.log(`Embedding result: ${JSON.stringify(embeddingResult)}`);
+
+          embeddingsTokenCount += embeddingResult?.usage?.total_tokens ?? 0;
+          console.log(`Embedding token count: ${embeddingsTokenCount}`);
+          console.log(`Embedding: ${embeddingResult?.data[0].embedding}`);
+
+          // Store the emedding in Postgres db.
+          embeddingsData.push({
+            user_id: userId,
+            content: input,
+            token_count: embeddingResult?.usage.total_tokens ?? 0,
+            embedding: embeddingResult?.data[0].embedding,
+            url,
+          });
+        } catch (error) {
+          const snippet = input.slice(0, 20);
+          console.error(`Error ${error}`);
+          errorMessages.push(
+            `Unable to generate embeddings for section starting with '${snippet}...': ${error}`
+          );
         }
       }
+
+      if (embeddingsData.length === 0) {
+        return {
+          success: false,
+          errorMessage: UNABLE_TO_PROCESS_PDF_MESSAGE,
+        };
+      }
+
+      let newTokenCountTotal = totalTokens - embeddingsTokenCount;
+      if (newTokenCountTotal < 0) {
+        console.error(
+          `There might be a bug in the code. Beucase the new token count is negative: ${newTokenCountTotal}, totalTokens: ${totalTokens}, embeddingsTokenCount: ${embeddingsTokenCount}`
+        );
+        newTokenCountTotal = 0;
+      }
+
+      // Save the embeddings in the database
+      const createDocumentsResponseBatch = await createDocumentsBatch(
+        embeddingsData
+      );
+      if (!createDocumentsResponseBatch) {
+        console.error(`Unable to save embeddings in batch the database`);
+        // Try one by one
+        for (const embedding of embeddingsData) {
+          const createDocumentsResponse = await createDocumentsBatch([
+            embedding,
+          ]);
+          if (!createDocumentsResponse) {
+            console.error(`Unable to save embedding in the database`);
+            errorMessages.push(`Unable to save embedding in the database`);
+            return {
+              success: false,
+              errorMessage: errorMessages,
+            };
+          }
+        }
+      }
+
+      await updateUserTokenCountRedis(userId, newTokenCountTotal);
+
+      // return the new token count
+      return { success: true, tokenCount: newTokenCountTotal };
+    } catch (err) {
+      console.error(err);
+      return { success: false, errorMessage: INTERNAL_SERVER_ERROR_MESSAGE };
+    } finally {
+      // Release the lock when we're done
+      await lock.release();
     }
-
-    await updateUserTokenCountRedis(userId, newTokenCountTotal);
-
-    // return the new token count
-    return { success: true, tokenCount: newTokenCountTotal };
   } catch (err) {
+    // Error acquiring lock
     console.error(err);
     return { success: false, errorMessage: INTERNAL_SERVER_ERROR_MESSAGE };
-  } finally {
-    // Release the lock when we're done
-    await lock.release();
   }
 }

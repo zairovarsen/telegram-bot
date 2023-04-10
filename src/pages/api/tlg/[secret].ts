@@ -51,6 +51,8 @@ import { PreCheckoutQuery } from "telegraf/typings/core/types/typegram";
 import { qStash } from "@/lib/qstash";
 import { bot } from "@/lib/bot";
 import { INSUFFICEINT_IMAGE_GENERATIONS_MESSAGE } from "@/utils/constants";
+import { PdfBody } from "@/lib/pdf";
+import { ImageBody } from "@/lib/image";
 
 const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
   // eventEmitter.on(
@@ -271,21 +273,22 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
           });
         }
 
+        const body:ImageBody = {
+          chatId: chatId,
+          messageId: messageId,
+          fileId,
+          userId: userId,
+          conversionModel:
+            data == "Room"
+              ? ConversionModel.CONTROLNET_HOUGH
+              : data == "Scribble"
+              ? ConversionModel.CONTROLNET_SCRIBBLE
+              : ConversionModel.GFPGAN,
+        }
+
         const qStashPublishResponse = await qStash.publishJSON({
-          url: process.env.QSTASH_URL as string,
-          body: {
-            chatId: chatId,
-            messageId: messageId,
-            mimeType: "application/jpeg",
-            fileId,
-            userId: userId,
-            conversionModel:
-              data == "Room"
-                ? ConversionModel["controlnet-hough"]
-                : data == "Scribble"
-                ? ConversionModel["controlnet-scribble"]
-                : ConversionModel["gfpgan"],
-          },
+          url: `${process.env.QSTASH_URL}/image` as string,
+          body,
           retries: 0,
         });
         if (!qStashPublishResponse || !qStashPublishResponse.messageId) {
@@ -307,16 +310,17 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
           reply_to_message_id: messageId,
         });
 
+        const body: ImageBody = {
+          chatId: chatId,
+          messageId: messageId,
+          prompt: text,
+          userId: userId,
+          conversionModel: ConversionModel.OPENJOURNEY 
+        }
+
         const qStashPublishResponse = await qStash.publishJSON({
-          url: process.env.QSTASH_URL as string,
-          body: {
-            chatId: chatId,
-            messageId: messageId,
-            mimeType: "text/plain",
-            userId: userId,
-            prompt: text,
-            text:data
-          },
+          url: `${process.env.QSTASH_URL}/image` as string,
+          body,
           retries: 0,
         });
         if (!qStashPublishResponse || !qStashPublishResponse.messageId) {

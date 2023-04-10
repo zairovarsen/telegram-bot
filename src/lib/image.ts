@@ -48,7 +48,8 @@ export type ImageBody = {
  * @returns 
  */
 export const hasFileId = (obj: any): obj is {fileId: string} => {
-  return 'fileId' in obj;
+  console.log(typeof(obj));
+  return typeof obj === 'object' && obj !== null && 'fileId' in obj;
 }
 
 /**
@@ -58,7 +59,7 @@ export const hasFileId = (obj: any): obj is {fileId: string} => {
  * @returns 
  */
 export const hasPrompt = (obj: any): obj is {prompt: string} => {
-  return 'prompt' in obj;
+  return typeof obj === 'object' && obj !== null && 'prompt' in obj;
 }
 
 /**

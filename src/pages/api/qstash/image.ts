@@ -46,7 +46,7 @@ export default async function handler(
       return;
     }
 
-    const imageBody: ImageBody = parseRequestBody(rawBody);
+    const imageBody: ImageBody = parseRequestBody(JSON.parse(rawBody));
     const { chatId, messageId, userId, conversionModel } = imageBody;
 
     let image: ImageGenerationResult;
