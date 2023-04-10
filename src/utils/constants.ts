@@ -60,6 +60,10 @@ To generate a response to your question, simply type your query followed by a qu
 We hope this information helps you make the most of your experience with Insight AI Bot. If you have any further questions, feel free to ask!
 `;
 
+export const DUPLICATE_FILE_UPLOAD_MESSAGE = `
+🔍 It looks like you may have already uploaded this file recently. If you'd like to ask questions or get insights from the document, please feel free to do so! If you believe this is a mistake and you have a different file to upload, kindly double-check the file and try again. InsightAI is here to help you! 😊
+`
+
 export const INVALID_PRICING_PLAN_MESSAGE = `
 Oops! It seems like you've selected an invalid pricing plan. 🙁 Please double-check your options and choose a valid plan to continue. If you need assistance, feel free to reach out to our support team. We're here to help! Thanks for using our Telegram bot! 🤖
 `;

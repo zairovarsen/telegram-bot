@@ -14,6 +14,7 @@ export interface Database {
           content: string | null
           created_at: string
           embedding: unknown | null
+          hash: string | null
           id: number
           token_count: number | null
           updated_at: string
@@ -24,6 +25,7 @@ export interface Database {
           content?: string | null
           created_at?: string
           embedding?: unknown | null
+          hash?: string | null
           id?: number
           token_count?: number | null
           updated_at?: string
@@ -34,6 +36,7 @@ export interface Database {
           content?: string | null
           created_at?: string
           embedding?: unknown | null
+          hash?: string | null
           id?: number
           token_count?: number | null
           updated_at?: string
@@ -119,7 +122,18 @@ export interface Database {
       }
     }
     Views: {
-      [_ in never]: never
+      distinct_user_file_hashes: {
+        Row: {
+          hash: string | null
+          user_id: number | null
+        }
+      }
+      distinct_user_file_url: {
+        Row: {
+          url: string | null
+          user_id: number | null
+        }
+      }
     }
     Functions: {
       increment_two_fields: {

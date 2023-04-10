@@ -55,6 +55,33 @@ export const getUserDataFromDatabase = async (
   }
 };
 
+/**
+ * Get user file hashes
+ */
+export const checkUserFileHashExist = async (
+  user_id: number,
+  hash: string
+): Promise<boolean> => {
+  try {
+    const { data, error } = await supabaseClient
+      .from("distinct_user_file_hashes")
+      .select('*')
+      .eq("user_id", user_id)
+      .eq("hash", hash)
+      .limit(1);
+
+    if (error) {
+      console.error(`Error while checking file hash: ${error}`);
+      return false;
+    } else {
+      return data.length > 0;
+    }
+  } catch (error) {
+    console.error(`Exception occurred while checking file hash: ${error}`);
+    return false;
+  }
+}
+
 /** Create new user in the database
  *
  * @param body
@@ -247,3 +274,31 @@ export const createNewPayment = async ({
     return false;
   }
 };
+
+
+export const uploadFileToSupabaseStorage = async (
+  file: Buffer
+): Promise<string | null> => {
+  try {
+    const bucketName = 'user-files';
+    const fileName = `pdf/${Date.now()}.pdf`;
+
+    const { error } = await supabaseClient.storage
+      .from(bucketName)
+      .upload(fileName, file, {
+        contentType: 'application/pdf',
+        upsert: false
+      })
+
+    if (error) {
+      console.error(`Error while uploading file to Supabase storage: ${error.message}`);
+      return null;
+    } else {
+      return `https://osvtgvfbqnfwkwhrdmek.supabase.co/storage/v1/object/public/user-files/${fileName}`;
+    }
+  } catch (err) {
+    console.error(`Exception occurred while uploading file to Supabase storage: ${err}`);
+    return null;
+  }
+}
+

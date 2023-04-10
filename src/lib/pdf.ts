@@ -1,8 +1,8 @@
-import { createDocumentsBatch } from "./supabase";
 import { Document } from "@/types";
 import pdfParse from "pdf-parse";
 import {
   DOC_SIZE,
+  DUPLICATE_FILE_UPLOAD_MESSAGE,
   INSUFFICIENT_TOKENS_MESSAGE,
   INTERNAL_SERVER_ERROR_MESSAGE,
   MIN_CONTENT_LENGTH,
@@ -10,7 +10,7 @@ import {
 } from "@/utils/constants";
 import GPT3Tokenizer from "gpt3-tokenizer";
 import { redlock, getRedisClient, hget } from "@/lib/redis";
-import { InsertDocuments } from "@/lib/supabase";
+import { InsertDocuments, checkUserFileHashExist, createDocumentsBatch, uploadFileToSupabaseStorage } from "@/lib/supabase";
 import { createEmbedding } from "@/lib/openai";
 import { backOff } from "exponential-backoff";
 import crypto from "crypto";
@@ -41,6 +41,7 @@ type DocumentGenerationResult = {
 }
 
 // TODO: Consider adding checksum to avoid duplicate processing, error detection, etc. Food for thought.
+// TODO: Consider using Supabase Storage for file storage
 
 /**
  * Upload a User Token Count to Redis
@@ -81,6 +82,7 @@ const calculateSha256 = (fileContent: Buffer): string => {
  * @return {Promise<DocumentGenerationResult>} - DocumentGenerationResult
  */
 const generateDocuments = async (
+  userId: number,
   pdfPath: string,
   totalTokens: number
 ): Promise<DocumentGenerationResult> => {
@@ -93,9 +95,28 @@ const generateDocuments = async (
     const buffer = Buffer.from(arrayBuffer);
     
     const sha256 = calculateSha256(buffer);
-    console.log(`SHA256: ${sha256}`)
+
+    const fileExist = await checkUserFileHashExist(userId, sha256);
+
+    if (fileExist) {
+      return {
+        success: false,
+        errorMessage: DUPLICATE_FILE_UPLOAD_MESSAGE,
+      }
+    }
+
 
     const data = await pdfParse(buffer);
+    const fileUploadUrl = await uploadFileToSupabaseStorage(buffer);    
+
+    if (!fileUploadUrl) {
+      return {
+        success: false,
+        errorMessage: UNABLE_TO_PROCESS_PDF_MESSAGE,
+      }
+    };
+
+    console.log(`File upload URL: ${fileUploadUrl}`);
 
     const lines = data.text
       .split("\n")
@@ -125,7 +146,7 @@ const generateDocuments = async (
         };
       }
 
-      documents.push({ url: pdfPath, body: chunk });
+      documents.push({ url: fileUploadUrl, body: chunk, hash: sha256 });
       start = end;
     }
 
@@ -177,7 +198,7 @@ export async function processPdf(
       }
 
       // Generates the document in chunks of 1500 , also checks if the total tokens are sufficient to generate embeddings
-      const documents = await generateDocuments(pdfPath, totalTokens);
+      const documents = await generateDocuments(userId,pdfPath, totalTokens);
       if (!documents.success) {
         return {
           success: false,
@@ -192,7 +213,7 @@ export async function processPdf(
         };
       }
 
-      for (const { url, body } of documents.documents) {
+      for (const { url, body, hash } of documents.documents) {
         const input = body.replace(/\n/g, " ");
 
         // Ignore content short than MIN_CONTENT_LENGTH
@@ -222,6 +243,7 @@ export async function processPdf(
             token_count: embeddingResult?.usage.total_tokens ?? 0,
             embedding: embeddingResult?.data[0].embedding,
             url,
+            hash,
           });
         } catch (error) {
           const snippet = input.slice(0, 20);

@@ -5,6 +5,7 @@ import { Context } from "telegraf";
 export type Document = {
     url: string;
     body: string;
+    hash: string;
 }
 
 export type Error = {
