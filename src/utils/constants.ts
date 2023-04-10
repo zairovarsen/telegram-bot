@@ -18,6 +18,9 @@ export const EXCLUDE_LINK_LIST = [
   "tiktok",
 ];
 
+
+export const OPEN_AI_AUDIO_LIMIT = 25; // 25 MB
+
 export const MIN_PROMPT_MESSAGE = `
 To get the best results from our InsightAI, please provide a minimum prompt length of 10 characters. This will help us generate more accurate and meaningful responses tailored to your needs. Thank you for using InsightAI! 😊`;
 export const SCRIBBLE_GENERATION_PROMPT = `Transform this scribble into a visually appealing, detailed image while preserving the original concept and enhancing its artistic expression.`;
@@ -80,6 +83,10 @@ export const UNABLE_TO_PROCESS_PDF_MESSAGE = `
 
 We regret to inform you that InsightAI is currently unable to process the PDF file you uploaded. We apologize for any inconvenience this may cause. Please try again later, and if the issue persists, feel free to reach out to our support team for assistance. Thank you for your understanding and patience.
 `;
+
+export const PDF_PROCESSING_SUCCESS_MESSAGE = `
+🎉 Success! 🎉 InsightAI has successfully processed the PDF document and is now ready to assist you. Feel free to ask anything you want, and let our AI-powered bot provide you with valuable insights. Let's explore the knowledge together! 🤖🔍
+`
 
 export const INTERNAL_SERVER_ERROR_MESSAGE = `
 ⚠️ Internal Server Error ⚠️

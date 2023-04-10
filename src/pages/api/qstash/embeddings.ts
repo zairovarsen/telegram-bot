@@ -5,6 +5,7 @@ import { bot } from "@/lib/bot";
 import {
   ERROR_GENERATING_EMBEDDINGS_MESSAGE,
   INTERNAL_SERVER_ERROR_MESSAGE,
+  PDF_PROCESSING_SUCCESS_MESSAGE,
   UNABLE_TO_PROCESS_PDF_MESSAGE,
 } from "@/utils/constants";
 import { readRequestBody } from "@/utils/readRawBody";
@@ -68,6 +69,9 @@ export default async function handler(
     }
 
     console.log(`Remaining tokens: ${embeddingsResult.tokenCount}`);
+    await bot.telegram.sendMessage(chatId, PDF_PROCESSING_SUCCESS_MESSAGE , {
+      reply_to_message_id: messageId,
+    });
     res.status(200).send("OK");
   } catch (err) {
     console.error(err);

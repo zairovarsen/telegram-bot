@@ -13,6 +13,8 @@ import { redlock, getRedisClient, hget } from "@/lib/redis";
 import { InsertDocuments } from "@/lib/supabase";
 import { createEmbedding } from "@/lib/openai";
 import { backOff } from "exponential-backoff";
+import crypto from "crypto";
+
 
 export type PdfBody = {
   chatId: number;
@@ -40,15 +42,36 @@ type DocumentGenerationResult = {
 
 // TODO: Consider adding checksum to avoid duplicate processing, error detection, etc. Food for thought.
 
+/**
+ * Upload a User Token Count to Redis
+ * 
+ * @param userId 
+ * @param tokenCount 
+ */
 const updateUserTokenCountRedis = async (
   userId: number,
   tokenCount: number
 ): Promise<void> => {
   const userKey = `user:${userId}`;
   const redisMulti = getRedisClient().multi(); // Start a transaction
-  redisMulti.hincrby(userKey, "tokens", -tokenCount);
-  const res = await redisMulti.exec(); // Execute the transaction
+  redisMulti.hset(userKey, {
+    tokens: tokenCount,
+  });
+  await redisMulti.exec(); // Execute the transaction
 };
+
+
+/**
+ * Calculate the SHA256 hash of a file for avoiding file deduplication
+ * 
+ * @param fileContent 
+ * @returns 
+ */
+const calculateSha256 = (fileContent: Buffer): string => {
+  const hash = crypto.createHash("sha256");
+  hash.update(fileContent);
+  return hash.digest("hex");
+}
 
 /**
  * Generate documents from a PDF file
@@ -68,6 +91,9 @@ const generateDocuments = async (
     const response = await fetch(pdfPath);
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+    
+    const sha256 = calculateSha256(buffer);
+    console.log(`SHA256: ${sha256}`)
 
     const data = await pdfParse(buffer);
 
@@ -80,7 +106,8 @@ const generateDocuments = async (
 
     while (start < lines.length) {
       const end = start + DOC_SIZE;
-      const chunk = lines.slice(start, end);
+      const chunk = lines.slice(start, end).replace(/\n/g, " ");
+
 
       if (chunk.length < MIN_CONTENT_LENGTH) {
         start = end;
@@ -101,6 +128,8 @@ const generateDocuments = async (
       documents.push({ url: pdfPath, body: chunk });
       start = end;
     }
+
+    console.log(`User has ${remainingTokens} tokens left. According to the tokenizer, the user has used ${totalTokens - remainingTokens} tokens.`)
 
     return {
       success: true,
@@ -138,6 +167,7 @@ export async function processPdf(
 
     try {
       const totalTokens = parseInt((await hget(key, "tokens")) || "0");
+      console.log(`Total tokens: ${totalTokens}`);
     
       if (totalTokens <= 0) {
         return {
@@ -146,6 +176,7 @@ export async function processPdf(
         };
       }
 
+      // Generates the document in chunks of 1500 , also checks if the total tokens are sufficient to generate embeddings
       const documents = await generateDocuments(pdfPath, totalTokens);
       if (!documents.success) {
         return {
@@ -180,13 +211,11 @@ export async function processPdf(
             }
           );
 
-          console.log(`Embedding result: ${JSON.stringify(embeddingResult)}`);
-
           embeddingsTokenCount += embeddingResult?.usage?.total_tokens ?? 0;
           console.log(`Embedding token count: ${embeddingsTokenCount}`);
           console.log(`Embedding: ${embeddingResult?.data[0].embedding}`);
 
-          // Store the emedding in Postgres db.
+          // Store the emedding in Supabase db.
           embeddingsData.push({
             user_id: userId,
             content: input,
@@ -211,6 +240,7 @@ export async function processPdf(
       }
 
       let newTokenCountTotal = totalTokens - embeddingsTokenCount;
+      console.log(`New token count: ${newTokenCountTotal}. According to the ChatGPT API, the user has used ${embeddingsTokenCount} tokens.`)
       if (newTokenCountTotal < 0) {
         console.error(
           `There might be a bug in the code. Beucase the new token count is negative: ${newTokenCountTotal}, totalTokens: ${totalTokens}, embeddingsTokenCount: ${embeddingsTokenCount}`

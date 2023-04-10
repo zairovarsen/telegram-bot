@@ -55,45 +55,6 @@ import { PdfBody } from "@/lib/pdf";
 import { ImageBody } from "@/lib/image";
 
 const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
-  // eventEmitter.on(
-  //   "processInBackground",
-  //   async function processInBackground(
-  //     fileLink: string,
-  //     userId: number,
-  //     type: "url" | "pdf" | "image",
-  //     ctx: any,
-  //     conversionModel?: keyof typeof ConversionModel
-  //   ) {
-  //     let errors = [];
-
-  //     if (type == "pdf" || type == "url") {
-  //       errors = await generateEmbeddings(fileLink, userId, type);
-  //     } else {
-  //       errors = await processImage(
-  //         fileLink,
-  //         userId,
-  //         ctx,
-  //         conversionModel || "controlnet-hough"
-  //       );
-  //     }
-
-  //     if (errors.length > 0) {
-  //       console.error("Error processing in background");
-  //       ctx.reply("Error processing in background", {
-  //         reply_to_message_id: ctx.message.message_id,
-  //       });
-  //       eventEmitter.removeListener("processInBackground", processInBackground);
-  //       return;
-  //     }
-
-  //     ctx.reply("Your request is processed", {
-  //       reply_to_message_id: ctx.message.message_id,
-  //     });
-
-  //     eventEmitter.removeListener("processInBackground", processInBackground);
-  //   }
-  // );
-
   // Rate limiting middleware
   bot.use(async (ctx, next) => {
     if (ctx.message?.from.is_bot) {
@@ -995,11 +956,10 @@ Learn more about your current limit at /limit. Thank you for choosing us, and we
           });
 
           const qStashPublishResponse = await qStash.publishJSON({
-            url: process.env.QSTASH_URL as string,
+            url: `${process.env.QSTASH_URL}/embeddings` as string,
             body: {
               chatId: chatId,
               messageId: messageId,
-              mimeType,
               fileId,
               userId: fromId,
             },
