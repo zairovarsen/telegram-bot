@@ -24,8 +24,14 @@ import {
   MIN_PROMPT_LENGTH,
   MIN_PROMPT_MESSAGE,
   INVALID_PRICING_PLAN_MESSAGE,
+  MAX_PROMPT_LENGTH,
+  MAX_PROMPT_MESSAGE,
+  UNANSWERED_QUESTION_MESSAGE,
+  MODERATION_ERROR_MESSAGE,
+  MAX_TOKENS_COMPLETION,
 } from "@/utils/constants";
 import {
+  checkCompletionsRateLimits,
   checkUserRateLimit,
   getEmbeddingsRateLimitResponse,
   imageGenerationRateLimit,
@@ -39,12 +45,7 @@ import {
   updateImageAndTokensTotal,
 } from "@/lib/supabase";
 import { bytesToMegabytes } from "@/utils/bytesToMegabytes";
-import {
-  getRedisClient,
-  hgetAll,
-  hmset,
-  redlock,
-} from "@/lib/redis";
+import { getRedisClient, hget, hgetAll, hmset, redlock } from "@/lib/redis";
 
 import { ConversionModel, UserInfoCache } from "@/types";
 import { PreCheckoutQuery } from "telegraf/typings/core/types/typegram";
@@ -53,6 +54,8 @@ import { bot } from "@/lib/bot";
 import { INSUFFICEINT_IMAGE_GENERATIONS_MESSAGE } from "@/utils/constants";
 import { PdfBody } from "@/lib/pdf";
 import { ImageBody } from "@/lib/image";
+import { createCompletion, createModeration, getPayload } from "@/lib/openai";
+import { estimateTotalCompletionTokens } from "@/utils/tokenizer";
 
 const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
   // Rate limiting middleware
@@ -234,7 +237,7 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
           });
         }
 
-        const body:ImageBody = {
+        const body: ImageBody = {
           chatId: chatId,
           messageId: messageId,
           fileId,
@@ -245,7 +248,7 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
               : data == "Scribble"
               ? ConversionModel.CONTROLNET_SCRIBBLE
               : ConversionModel.GFPGAN,
-        }
+        };
 
         const qStashPublishResponse = await qStash.publishJSON({
           url: `${process.env.QSTASH_URL}/image` as string,
@@ -276,8 +279,8 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
           messageId: messageId,
           prompt: text,
           userId: userId,
-          conversionModel: ConversionModel.OPENJOURNEY 
-        }
+          conversionModel: ConversionModel.OPENJOURNEY,
+        };
 
         const qStashPublishResponse = await qStash.publishJSON({
           url: `${process.env.QSTASH_URL}/image` as string,
@@ -296,8 +299,100 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
           reply_to_message_id: messageId,
         });
       }
-    } else if (data == "Question") {
-      ctx.reply("Question", {
+    } else if (data == "General Question") {
+      const { text } = message;
+
+      // Acquire a lock on the user resource
+      const userKey = `user:${userId}`;
+      const userLockResource = `locks:user:image:${userId}`;
+      try {
+        let lock = await redlock.acquire([userLockResource], 2 * 60 * 1000);
+
+        try {
+          const rateLimitResult = await checkCompletionsRateLimits(userId);
+
+          if (!rateLimitResult.result.success) {
+            console.error("Rate limit exceeded");
+            ctx.reply(
+              getEmbeddingsRateLimitResponse(
+                rateLimitResult.hours,
+                rateLimitResult.minutes,
+                rateLimitResult.seconds
+              ),
+              {
+                reply_to_message_id: messageId,
+              }
+            );
+            return;
+          }
+
+          const sanitizedQuestion = text.replace(/(\r\n|\n|\r)/gm, "");
+
+          const moderationReponse = await createModeration(sanitizedQuestion);
+          if (moderationReponse?.results?.[0]?.flagged) {
+            console.error("Question is not allowed");
+            ctx.reply(MODERATION_ERROR_MESSAGE, {
+              reply_to_message_id: messageId,
+            });
+            return;
+          }
+
+          const totalTokensRemaining = parseInt(
+            (await hget(userKey, "tokens")) || "0"
+          );
+          console.log(`Total tokens remaining: ${totalTokensRemaining}`)
+
+          const estimatedTokensForRequest =
+            estimateTotalCompletionTokens(sanitizedQuestion);
+          console.log(
+            `Estimated tokens for request: ${estimatedTokensForRequest}`
+          );
+
+          if (totalTokensRemaining < estimatedTokensForRequest) {
+            console.error("Insufficient tokens");
+            ctx.reply(INSUFFICIENT_TOKENS_MESSAGE, {
+              reply_to_message_id: messageId,
+            });
+          }
+
+          await ctx.sendChatAction("typing");
+
+          const body = getPayload(sanitizedQuestion, "gpt-3.5-turbo");
+          const completion = await createCompletion(body);
+          const tokensUsed = completion?.usage?.total_tokens || 0;
+          const totalTokensRemainingAfterRequest =
+            totalTokensRemaining - tokensUsed;
+          console.log(`Tokens used total: ${tokensUsed}, prompt tokens: ${completion?.usage?.prompt_tokens}, completion tokens: ${completion?.usage?.completion_tokens}`);
+
+          const redisMulti = getRedisClient().multi(); // Start a transaction
+          redisMulti.hset(userKey, {
+            tokens: totalTokensRemainingAfterRequest,
+          });
+          await redisMulti.exec();
+
+          const answer =
+            completion?.choices[0]?.message?.content ||
+            UNANSWERED_QUESTION_MESSAGE;
+          await ctx.reply(answer, {
+            reply_to_message_id: messageId,
+          });
+        } catch (err) {
+          console.error(err);
+          ctx.reply(INTERNAL_SERVER_ERROR_MESSAGE, {
+            reply_to_message_id: messageId,
+          });
+        } finally {
+          lock.release();
+        }
+      } catch (err) {
+        // Release the lock
+        console.error(err);
+        ctx.reply(INTERNAL_SERVER_ERROR_MESSAGE, {
+          reply_to_message_id: messageId,
+        });
+      }
+    } else if (data == "PDF Question") {
+      ctx.reply("Pdf Question", {
         reply_to_message_id: messageId,
       });
     } else if (
@@ -642,8 +737,17 @@ You have access to:
 
     // check if message end with question mark
     if (message.text) {
-      if (message.text.length < MIN_PROMPT_LENGTH) {
+      const { text } = ctx.message as any;
+
+      if (text.length < MIN_PROMPT_LENGTH) {
         ctx.reply(MIN_PROMPT_MESSAGE, {
+          reply_to_message_id: messageId,
+        });
+        return;
+      }
+
+      if (text.length > MAX_PROMPT_LENGTH) {
+        ctx.reply(MAX_PROMPT_MESSAGE, {
           reply_to_message_id: messageId,
         });
         return;
@@ -955,14 +1059,16 @@ Learn more about your current limit at /limit. Thank you for choosing us, and we
             reply_to_message_id: messageId,
           });
 
+          const body: PdfBody = {
+            chatId: chatId,
+            messageId: messageId,
+            fileId,
+            userId: fromId,
+          };
+
           const qStashPublishResponse = await qStash.publishJSON({
             url: `${process.env.QSTASH_URL}/embeddings` as string,
-            body: {
-              chatId: chatId,
-              messageId: messageId,
-              fileId,
-              userId: fromId,
-            },
+            body,
           });
           if (!qStashPublishResponse || !qStashPublishResponse.messageId) {
             ctx.reply(INTERNAL_SERVER_ERROR_MESSAGE, {
@@ -1029,114 +1135,6 @@ Learn more about your current limit at /limit. Thank you for choosing us, and we
       });
     }
   });
-
-  // bot.on(message("caption"), async (ctx) => {
-  //   // validate that the caption is /pdf and file is of type pdf
-  //   const messageId = ctx.message.message_id;
-  //   if (ctx.message.caption === "/pdf") {
-  //     if ((ctx.message as any).document.mime_type !== "application/pdf") {
-  //       ctx.reply("Please attach a pdf file", {
-  //         reply_to_message_id: messageId,
-  //       });
-  //       return;
-  //     } else {
-  //       // validate that the file size is less than 50MB
-  //       const sizeInMb = bytesToMegabytes(
-  //         (ctx.message as any).document.file_size
-  //       );
-  //       if (sizeInMb > TELEGRAM_FILE_SIZE_LIMIT) {
-  //         ctx.reply("Please attach a pdf file less than 50MB", {
-  //           reply_to_message_id: messageId,
-  //         });
-  //         return;
-  //       }
-
-  //       if (processing) {
-  //         ctx.reply("Please wait, I am still processing your last request", {
-  //           reply_to_message_id: messageId,
-  //         });
-  //         return;
-  //       }
-
-  //       const rateLimitResult = await checkEmbeddingsRateLimit(
-  //         "pdf",
-  //         ctx.message.from.id
-  //       );
-
-  //       res.setHeader("X-RateLimit-Limit", rateLimitResult.result.limit);
-  //       res.setHeader(
-  //         "X-RateLimit-Remaining",
-  //         rateLimitResult.result.remaining
-  //       );
-
-  //       if (!rateLimitResult.result.success) {
-  //         console.error("Rate limit exceeded");
-  //         ctx.reply(
-  //           getEmbeddingsRateLimitResponse(
-  //             rateLimitResult.hours,
-  //             rateLimitResult.minutes
-  //           ),
-  //           { reply_to_message_id: messageId }
-  //         );
-  //         processing = false;
-  //         return;
-  //       }
-
-  //       // download the file
-  //       const file = await ctx.telegram.getFile(
-  //         (ctx.message as any).document.file_id
-  //       );
-  //       const fileLink = `https://api.telegram.org/file/bot${process.env.NEXT_PUBLIC_TELEGRAM_TOKEN}/${file.file_path}`;
-
-  //       ctx.reply("Received your request, processing in the background...", {
-  //         reply_to_message_id: ctx.message.message_id,
-  //       });
-
-  //       eventEmitter.emit(
-  //         "processInBackground",
-  //         fileLink,
-  //         ctx.message.from.id,
-  //         "pdf",
-  //         ctx
-  //       );
-  //     }
-  //   } else if (
-  //     ctx.message.caption === "/room" ||
-  //     ctx.message.caption == "/scribble"
-  //   ) {
-  //     if ((ctx.message as any).photo) {
-  //       const photo = (ctx.message as any).photo;
-  //       const file = await ctx.telegram.getFile(
-  //         photo[photo.length - 1].file_id
-  //       );
-  //       const fileLink = `https://api.telegram.org/file/bot${process.env.NEXT_PUBLIC_TELEGRAM_TOKEN}/${file.file_path}`;
-
-  //       ctx.reply("Received your request, processing in the background...", {
-  //         reply_to_message_id: ctx.message.message_id,
-  //       });
-
-  //       eventEmitter.emit(
-  //         "processInBackground",
-  //         fileLink,
-  //         ctx.message.from.id,
-  //         "image",
-  //         ctx,
-  //         ctx.message.caption === "/room"
-  //           ? ConversionModel["controlnet-hough"]
-  //           : ConversionModel["controlnet-scribble"]
-  //       );
-  //     } else {
-  //       ctx.reply("Please attach an image file", {
-  //         reply_to_message_id: messageId,
-  //       });
-  //       return;
-  //     }
-  //   } else {
-  //     ctx.reply(INVALID_COMMAND_MESSAGE, {
-  //       reply_to_message_id: messageId,
-  //     });
-  //   }
-  // });
 
   bot.catch((err, ctx) => {
     console.log(`Ooops, encountered an error for ${ctx.updateType}`, err);

@@ -1,5 +1,10 @@
 import { Configuration, CreateChatCompletionRequest, CreateChatCompletionResponse, CreateEmbeddingRequest, CreateEmbeddingResponse, CreateModerationRequest, CreateModerationResponse, OpenAIApi } from "openai";
-
+import {
+  createParser,
+  ParsedEvent,
+  ReconnectInterval,
+} from "eventsource-parser";
+import { MAX_TOKENS_COMPLETION } from "@/utils/constants";
 
 const configuration = new Configuration({
   apiKey: process.env.OPENAI_API_KEY,
@@ -44,21 +49,68 @@ export const createEmbedding = async (
   }
 };
 
-/**
- * 
- * @param payload The completion payload
- * @returns The completion response
- */
 export const createCompletion = async (
   payload: CreateChatCompletionRequest
 ): Promise<CreateChatCompletionResponse | null> => {
   try {
-    const completion = await openai.createCompletion(payload);
+    const completion = await openai.createChatCompletion(payload);
     return completion.data;
-  } catch(err) {
-    console.error(`OpenAI completion error: ${err}`);
+  } catch (err) {
+    console.error(`OpenAI completion error: ${err}`)
     return null;
   }
+};
+
+
+/**
+ * Generate a completion stream , problem is editText in telegram gives too many requests error, think of alternative way to do this
+ * @param payload The completion payload
+ * @param onChunk The callback to call when a chunk is received
+ * @returns The completion stream response
+ */
+export const generateCompletion = async (
+  payload: CreateChatCompletionRequest,
+  onChunk: (chunk: string) => void
+): Promise<CreateChatCompletionResponse | null> => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const res = (await openai.createChatCompletion(payload, { responseType: 'stream' })) as any;
+
+      res.data.on('data', (data:Buffer) => {
+        const lines = data.toString().split('\n').filter(line => line.trim() !== '');
+        for (const line of lines) {
+          const message = line.replace(/^data: /, '');
+          if (message === '[DONE]') {
+            resolve(null);
+            return; // Stream finished
+          }
+          try {
+            const parsed = JSON.parse(message);
+            const chunk = parsed.choices[0].delta?.content || "";
+            onChunk(chunk);
+          } catch (error) {
+            console.error('Could not JSON parse stream message', message, error);
+          }
+        }
+      });
+    } catch (error: any) {
+      if (error.response?.status) {
+        console.error(error.response.status, error.message);
+        error.response.data.on('data', (data:any) => {
+          const message = data.toString();
+          try {
+            const parsed = JSON.parse(message);
+            console.error('An error occurred during OpenAI request: ', parsed);
+          } catch (error) {
+            console.error('An error occurred during OpenAI request: ', message);
+          }
+        });
+      } else {
+        console.error('An error occurred during OpenAI request', error);
+      }
+      reject(error);
+    }
+  });
 }
 
 /**
@@ -68,15 +120,15 @@ export const createCompletion = async (
  * @param model The model to use
  * @returns The completion payload
  */
-export const getPayload = (prompt: string, model: OpenAIModel): CreateChatCompletionRequest => {
+export const getPayload = (prompt: string, model: OpenAIModel, stream?: boolean): CreateChatCompletionRequest => {
   const payload = {
     model,
     temperature: 0.1,
     top_p: 1,
     frequency_penalty: 0,
     presence_penalty: 0,
-    max_tokens: 500,
-    stream: false,
+    max_tokens: MAX_TOKENS_COMPLETION,
+    stream: stream || false,
     n: 1,
   };
 
@@ -85,6 +137,4 @@ export const getPayload = (prompt: string, model: OpenAIModel): CreateChatComple
     messages: [{ role: "user", content: prompt }],
   }
 };
-
-
 

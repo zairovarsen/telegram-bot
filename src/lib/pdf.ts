@@ -8,12 +8,12 @@ import {
   MIN_CONTENT_LENGTH,
   UNABLE_TO_PROCESS_PDF_MESSAGE,
 } from "@/utils/constants";
-import GPT3Tokenizer from "gpt3-tokenizer";
 import { redlock, getRedisClient, hget } from "@/lib/redis";
 import { InsertDocuments, checkUserFileHashExist, createDocumentsBatch, uploadFileToSupabaseStorage } from "@/lib/supabase";
 import { createEmbedding } from "@/lib/openai";
 import { backOff } from "exponential-backoff";
 import crypto from "crypto";
+import { tokenizer } from "@/utils/tokenizer";
 
 
 export type PdfBody = {
@@ -88,7 +88,6 @@ const generateDocuments = async (
 ): Promise<DocumentGenerationResult> => {
   try {
     const documents: Document[] = [];
-    const tokenizer = new GPT3Tokenizer({ type: "gpt3" });
 
     const response = await fetch(pdfPath);
     const arrayBuffer = await response.arrayBuffer();
@@ -104,7 +103,6 @@ const generateDocuments = async (
         errorMessage: DUPLICATE_FILE_UPLOAD_MESSAGE,
       }
     }
-
 
     const data = await pdfParse(buffer);
     const fileUploadUrl = await uploadFileToSupabaseStorage(buffer);    

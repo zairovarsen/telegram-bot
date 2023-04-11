@@ -6,6 +6,7 @@ enum RateLimitTypes {
   PDF = "pdf",
   IMAGE = "image",
   REQUESTS = "requests",
+  COMPLETION = "completion",
 }
 
 const rateLimitTypeToKey = (type: RateLimitTypes, userId: number) => {
@@ -36,26 +37,27 @@ const rateLimitTypeToKey = (type: RateLimitTypes, userId: number) => {
 // //   return { result, hours, minutes, seconds };
 // // }
 
-// export const checkCompletionsRateLimits = async (userId: number) => {
-//   // For now, impose a hard limit of 10 completions per day
-//   // per user. Later, tie it to the plan associated to a team/project.
-//   const ratelimit = new Ratelimit({
-//     redis: getRedisClient(),
-//     limiter: Ratelimit.fixedWindow(10, "24 h"),
-//     analytics: true,
-//   });
+export const checkCompletionsRateLimits = async (userId: number) => {
+  // For now, impose a hard limit of 10 completions per day
+  // per user. Later, tie it to the plan associated to a team/project.
+  const ratelimit = new Ratelimit({
+    redis: getRedisUpstashClient(),
+    limiter: Ratelimit.fixedWindow(10, "24 h"),
+    analytics: true,
+  });
 
-//   const result = await ratelimit.limit(rateLimitTypeToKey('completion', userId));
+  const result = await ratelimit.limit(rateLimitTypeToKey(RateLimitTypes.COMPLETION, userId));
 
-//   // Calcualte the remaining time until generations are reset
-//   const diff = Math.abs(
-//     new Date(result.reset).getTime() - new Date().getTime()
-//   );
-//   const hours = Math.floor(diff / 1000 / 60 / 60);
-//   const minutes = Math.floor(diff / 1000 / 60) - hours * 60;
+  // Calcualte the remaining time until generations are reset
+  const diff = Math.abs(
+    new Date(result.reset).getTime() - new Date().getTime()
+  );
+  const hours = Math.floor(diff / 1000 / 60 / 60);
+  const minutes = Math.floor(diff / 1000 / 60) - hours * 60;
+  const seconds = Math.floor(diff / 1000) - hours * 60 * 60 - minutes * 60;
 
-//   return { result, hours, minutes };
-// };
+  return { result, hours, minutes, seconds };
+};
 
 // export const checkEmbeddingsRateLimit = async (type: 'pdf' | 'url',userId: number) => {
 //   // For now, impose a hard limit of 1 pdf file and 1 url processing per 24 hours
@@ -79,7 +81,7 @@ const rateLimitTypeToKey = (type: RateLimitTypes, userId: number) => {
 // };
 
 /**
- * Check the rate limit for a user, 30 requests per minute
+ * Check the rate limit for a user, 10 requests per minute
  *
  * @param userId
  * @returns {result: RateLimitResponse, hours: number, minutes: number, seconds: number}
@@ -87,7 +89,7 @@ const rateLimitTypeToKey = (type: RateLimitTypes, userId: number) => {
 export const checkUserRateLimit = async (userId: number) => {
   const ratelimit = new Ratelimit({
     redis: getRedisUpstashClient(),
-    limiter: Ratelimit.fixedWindow(30, "1 m"),
+    limiter: Ratelimit.fixedWindow(10, "1 m"),
     analytics: true,
   });
 

@@ -19,7 +19,14 @@ export const EXCLUDE_LINK_LIST = [
 ];
 
 
+export const MAX_TOKENS_COMPLETION = 200;
+
+
 export const OPEN_AI_AUDIO_LIMIT = 25; // 25 MB
+
+
+export const MAX_PROMPT_MESSAGE= `
+To get the best results from our InsightAI, please provide a maximum prompt length of 200 characters. This will help us generate more accurate and meaningful responses tailored to your needs. Thank you for using InsightAI! 😊`
 
 export const MIN_PROMPT_MESSAGE = `
 To get the best results from our InsightAI, please provide a minimum prompt length of 10 characters. This will help us generate more accurate and meaningful responses tailored to your needs. Thank you for using InsightAI! 😊`;
@@ -65,12 +72,20 @@ export const DUPLICATE_FILE_UPLOAD_MESSAGE = `
 `
 
 export const INVALID_PRICING_PLAN_MESSAGE = `
-Oops! It seems like you've selected an invalid pricing plan. 🙁 Please double-check your options and choose a valid plan to continue. If you need assistance, feel free to reach out to our support team. We're here to help! Thanks for using our Telegram bot! 🤖
+⚠️ Oops! It seems like you've selected an invalid pricing plan. 🙁 Please double-check your options and choose a valid plan to continue. If you need assistance, feel free to reach out to our support team. We're here to help! Thanks for using our Telegram bot! 🤖
 `;
 
 export const ERROR_GENERATING_EMBEDDINGS_MESSAGE = `
 🤖 InsightAI Bot: We have successfully processed most of the content in your file! However, we encountered some issues with certain parts.
 `;
+
+export const MODERATION_ERROR_MESSAGE = `
+⚠️ We're sorry, but it appears that your question doesn't adhere to our moderation guidelines. InsightAI is committed to maintaining a safe and respectful environment for all users. Please consider rephrasing your query or asking a different question that is in line with our guidelines. Thank you for your understanding and cooperation.
+`
+
+export const UNANSWERED_QUESTION_MESSAGE = `
+⚠️ We regret to inform you that InsightAI is currently unable to provide an answer to your question. We apologize for any inconvenience this may cause. Please feel free to try again later or ask another question. If the issue persists, don't hesitate to reach out to our support team for assistance. Thank you for your understanding and patience.
+`
 
 export const USER_CREATION_ERROR_MESSAGE = `
 ⚠️ Oops! We encountered an error while creating your account. We apologize for the inconvenience. Please give it another try later, or reach out to our support team if the issue persists. Thank you for your understanding! 🤖
@@ -205,9 +220,13 @@ We'll notify you as soon as the results are ready. 😊
 export const TEXT_GENERATION_MESSAGE = `
 🌟 Thank you for submitting your text! Our InsightAI bot can help you with the following tasks: 🌟
 
-🔵 Imagine - Generate an image with Open Journey based on the text description
+🔵 Imagine - Let Open Journey create a stunning image based on your text description.
 
-🔵 Question - Answer your question based on the documents you uploaded
+🔵 PDF Question - Get answers to any question based on the documents you uploaded.
+
+🔵 General Question - Get answers to any question you have, utilizing our advanced AI technology..
+
+🔵 Goal - Set a goal for our AI, and watch it devise a strategy and provide reasoning to achieve it..
 
 Please choose one of the above options to continue.
 `;
@@ -216,12 +235,20 @@ export const TEXT_GENERATION_OPTIONS = [
   {
     title: "Imagine",
     description:
-      "Generate an image with Open Journey based on the text description",
+      "Let Open Journey create a stunning image based on your text description.",
   },
   {
-    title: "Question",
-    description: "Answer your question based on the documents you uploaded",
+    title: "PDF Question",
+    description: "Get answers to any question based on the documents you uploaded",
   },
+  {
+    title: "General Question",
+    description: "Get answers to any question you have, utilizing our advanced AI technology.",
+  },
+  {
+    title: "Goal",
+    description: "Set a goal for our AI, and watch it devise a strategy and provide reasoning to achieve it."
+  }
 ];
 
 export const IMAGE_GENERATION_MESSAGE = `
