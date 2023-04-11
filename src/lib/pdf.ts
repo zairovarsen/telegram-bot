@@ -9,7 +9,7 @@ import {
   UNABLE_TO_PROCESS_PDF_MESSAGE,
 } from "@/utils/constants";
 import { redlock, getRedisClient, hget } from "@/lib/redis";
-import { InsertDocuments, checkUserFileHashExist, createDocumentsBatch, uploadFileToSupabaseStorage } from "@/lib/supabase";
+import { InsertDocuments, checkUserFileHashExist, createDocumentsBatch, updateUserTokens, uploadFileToSupabaseStorage } from "@/lib/supabase";
 import { createEmbedding } from "@/lib/openai";
 import { backOff } from "exponential-backoff";
 import crypto from "crypto";
@@ -56,7 +56,7 @@ const updateUserTokenCountRedis = async (
   const userKey = `user:${userId}`;
   const redisMulti = getRedisClient().multi(); // Start a transaction
   redisMulti.hset(userKey, {
-    tokens: tokenCount,
+    tokens: tokenCount > 0 ? tokenCount : 0,
   });
   await redisMulti.exec(); // Execute the transaction
 };
@@ -239,7 +239,7 @@ export async function processPdf(
             user_id: userId,
             content: input,
             token_count: embeddingResult?.usage.total_tokens ?? 0,
-            embedding: embeddingResult?.data[0].embedding,
+            embedding: embeddingResult?.data[0].embedding as any,
             url,
             hash,
           });
@@ -288,6 +288,16 @@ export async function processPdf(
             };
           }
         }
+      }
+
+      // Update the user's token count in Supabase
+      const updateUserTokensDB = await updateUserTokens(userId, newTokenCountTotal);
+      if (!updateUserTokensDB) {
+        console.error(`Unable to update user's token count in the database`);
+        return {
+          success: false,
+          errorMessage: errorMessages,
+        };
       }
 
       await updateUserTokenCountRedis(userId, newTokenCountTotal);

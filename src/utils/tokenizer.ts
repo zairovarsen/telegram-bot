@@ -16,3 +16,9 @@ export const estimateTotalCompletionTokens = (prompt: string): number => {
 
     return Math.round(estimateResponseTokens)
 }
+
+
+export const estimateEmbeddingTokens = (prompt: string): number => {
+    const promptTokens = tokenizer.encode(prompt).bpe.length;
+    return promptTokens;
+}

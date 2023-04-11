@@ -20,20 +20,16 @@ export default async function middleware(req: NextRequest) {
   console.log(`Ip address: ${ip}`)
   console.log(`Url: ${url}`);
 
-  // if (!ip || !inRange(ip, allowedIpRanges)) {
-  //   return new NextResponse("Forbidden", { status: 404 });
-  // }
-
-  if (req.method === "OPTIONS") {
-    return new NextResponse("ok", { status: 200 });
-  }
-
-  // check if the request is for upstash and if the signature is present
+   // check if the request is for upstash and if the signature is present
   if (url && (url.includes("/api/qstash/"))) {
     const signature = req.headers.get("upstash-signature");
     if (signature) {
       return NextResponse.next();
     }
+  }
+
+  if (!ip || !inRange(ip, allowedIpRanges)) {
+    return new NextResponse("Forbidden", { status: 404 });
   }
 
   // check if the request is for the api and if the secret key is correct

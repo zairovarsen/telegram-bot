@@ -19,7 +19,7 @@ export const EXCLUDE_LINK_LIST = [
 ];
 
 
-export const MAX_TOKENS_COMPLETION = 200;
+export const MAX_TOKENS_COMPLETION = 500;
 
 
 export const OPEN_AI_AUDIO_LIMIT = 25; // 25 MB
@@ -27,6 +27,14 @@ export const OPEN_AI_AUDIO_LIMIT = 25; // 25 MB
 
 export const MAX_PROMPT_MESSAGE= `
 To get the best results from our InsightAI, please provide a maximum prompt length of 200 characters. This will help us generate more accurate and meaningful responses tailored to your needs. Thank you for using InsightAI! 😊`
+
+export const MESSAGE_ACCEPTANCE_MESSAGE = `
+Thank you for your question! Our bot is currently working on generating a response for you. This may take a few moments, so please be patient. We appreciate your patience and understanding!
+`
+
+export const WORKING_ON_NEW_FEATURES_MESSAGE = `
+🛠️ We're currently working hard to bring you a new feature! Stay tuned for updates and thank you for your patience! 🤖
+`
 
 export const MIN_PROMPT_MESSAGE = `
 To get the best results from our InsightAI, please provide a minimum prompt length of 10 characters. This will help us generate more accurate and meaningful responses tailored to your needs. Thank you for using InsightAI! 😊`;
@@ -37,32 +45,21 @@ export const HELP_MESSAGE = `
 
 Welcome to the Insight AI Bot Help Page! Our advanced AI system is here to assist you with a variety of tasks. Below is a list of available commands and their descriptions to help you get started:
 
-1️⃣ /url - Train AI Model with a URL
-To train a model using a specific URL, simply type /url followed by the link. For example: /url https://www.example.com. Insight AI will then learn from the content at the specified URL.
+📷 Upload an Image to Get Started
 
-2️⃣ /dt - Display Trained Datasets List
-Keep track of all the trained datasets by typing /dt. The bot will promptly provide a list of all the datasets you have trained with, including URLs and PDF files.
+1️⃣ Enhance Room Design
 
-3️⃣ /limit - Check Rate Limit Information
-Stay informed about your usage by typing /limit. Insight AI will display information about your current rate limit and any related restrictions.
+2️⃣ Restore Old Photos
 
-4️⃣ /pdf - Train AI Model with a PDF File
-To train the AI model using a PDF file, send the command /pdf, followed by a caption and the PDF file itself. Please note that the maximum file size allowed is 50MB.
+3️⃣ Generate Image from Scribble
 
-5️⃣ /scribble - Generate Image from Scribble
-Upload an image of your scribble along with the command /scribble. Insight AI will analyze your scribble and create a refined image based on its essence.
+📝 Send Text or Voice to Get Started
 
-6️⃣ /room - Enhance Room Design
-Elevate your room's aesthetics with modern design techniques by sending an image of your space along with the command /room. Insight AI will analyze your space and suggest improvements to create a contemporary look.
+1️⃣ Ask Any General Question
 
-7️⃣ /restore - Restore Old Photos
-Breathe new life into your cherished memories by sending an old, damaged, or faded photograph along with the command /restore. Insight AI will skillfully restore the image, preserving your precious moments.
+2️⃣ Question your uploaded PDF files
 
-8️⃣ /imagine - Text to Image Conversion
-Experience the power of AI-driven visual storytelling with /imagine. Simply send an image along with a text description, and Insight AI will generate a corresponding image that brings your words to life.
-
-❓ Any Text with a Question Mark
-To generate a response to your question, simply type your query followed by a question mark. For example: "What is the weather like today?". Insight AI will process your question and provide a relevant response.
+3️⃣ Text to Image Conversion
 
 We hope this information helps you make the most of your experience with Insight AI Bot. If you have any further questions, feel free to ask!
 `;
@@ -85,6 +82,16 @@ export const MODERATION_ERROR_MESSAGE = `
 
 export const UNANSWERED_QUESTION_MESSAGE = `
 ⚠️ We regret to inform you that InsightAI is currently unable to provide an answer to your question. We apologize for any inconvenience this may cause. Please feel free to try again later or ask another question. If the issue persists, don't hesitate to reach out to our support team for assistance. Thank you for your understanding and patience.
+`
+
+export const NO_DATASETS_MESSAGE = `
+🤖 You haven't trained any datasets just yet.
+
+To get started, simply upload a pdf file. You can then ask it any question you want and let the power of InsightAI do the rest.
+`
+
+export const UNANSWERED_QUESTION_MESSAGE_PDF = `
+⚠️ We regret to inform you that InsightAI is currently unable to provide an answer to your question based on your uploaded pdf files. We apologize for any inconvenience this may cause. Please feel free to try again later or check your datasets using command /dt to ensure you have the neccessary files. If the issue persists, don't hesitate to reach out to our support team for assistance. Thank you for your understanding and patience.
 `
 
 export const USER_CREATION_ERROR_MESSAGE = `

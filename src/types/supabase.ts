@@ -13,7 +13,7 @@ export interface Database {
         Row: {
           content: string | null
           created_at: string
-          embedding: unknown | null
+          embedding: string | null
           hash: string | null
           id: number
           token_count: number | null
@@ -24,7 +24,7 @@ export interface Database {
         Insert: {
           content?: string | null
           created_at?: string
-          embedding?: unknown | null
+          embedding?: string | null
           hash?: string | null
           id?: number
           token_count?: number | null
@@ -35,7 +35,7 @@ export interface Database {
         Update: {
           content?: string | null
           created_at?: string
-          embedding?: unknown | null
+          embedding?: string | null
           hash?: string | null
           id?: number
           token_count?: number | null
@@ -147,7 +147,7 @@ export interface Database {
       }
       match_documents: {
         Args: {
-          query_embedding: unknown
+          query_embedding: string
           similarity_threshold: number
           match_count: number
         }

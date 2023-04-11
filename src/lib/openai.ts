@@ -37,7 +37,7 @@ export const createModeration = async ({input}: CreateModerationRequest): Promis
  * @returns The embedding response
  */
 export const createEmbedding = async (
-  { input, model='text-embedding-ada-002' }: CreateEmbeddingRequest
+  { input, model }: CreateEmbeddingRequest
 ): Promise<CreateEmbeddingResponse | null> => {
 
   try { 

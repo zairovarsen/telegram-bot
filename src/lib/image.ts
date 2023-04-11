@@ -111,7 +111,7 @@ export const updateUserImageGenerationsRemainingRedis = async (
   const userKey = `user:${userId}`;
   const redisMulti = getRedisClient().multi(); // Start a transaction
   redisMulti.hset(userKey, {
-    image_generations_remaining: imageGenerationRemaining,
+    image_generations_remaining: imageGenerationRemaining > 0 ? imageGenerationRemaining : 0,
   });
   await redisMulti.exec(); // Execute the transaction
 };

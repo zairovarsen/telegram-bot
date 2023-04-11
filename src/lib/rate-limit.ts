@@ -42,7 +42,7 @@ export const checkCompletionsRateLimits = async (userId: number) => {
   // per user. Later, tie it to the plan associated to a team/project.
   const ratelimit = new Ratelimit({
     redis: getRedisUpstashClient(),
-    limiter: Ratelimit.fixedWindow(10, "24 h"),
+    limiter: Ratelimit.fixedWindow(5, "1 m"),
     analytics: true,
   });
 

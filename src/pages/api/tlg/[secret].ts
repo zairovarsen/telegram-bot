@@ -29,6 +29,11 @@ import {
   UNANSWERED_QUESTION_MESSAGE,
   MODERATION_ERROR_MESSAGE,
   MAX_TOKENS_COMPLETION,
+  CONTEXT_TOKENS_CUTOFF,
+  UNANSWERED_QUESTION_MESSAGE_PDF,
+  NO_DATASETS_MESSAGE,
+  WORKING_ON_NEW_FEATURES_MESSAGE,
+  MESSAGE_ACCEPTANCE_MESSAGE,
 } from "@/utils/constants";
 import {
   checkCompletionsRateLimits,
@@ -43,6 +48,9 @@ import {
   getUserDataFromDatabase,
   createNewPayment,
   updateImageAndTokensTotal,
+  matchDocuments,
+  updateUserTokens,
+  getUserDistinctUrls,
 } from "@/lib/supabase";
 import { bytesToMegabytes } from "@/utils/bytesToMegabytes";
 import { getRedisClient, hget, hgetAll, hmset, redlock } from "@/lib/redis";
@@ -54,10 +62,22 @@ import { bot } from "@/lib/bot";
 import { INSUFFICEINT_IMAGE_GENERATIONS_MESSAGE } from "@/utils/constants";
 import { PdfBody } from "@/lib/pdf";
 import { ImageBody } from "@/lib/image";
-import { createCompletion, createModeration, getPayload } from "@/lib/openai";
-import { estimateTotalCompletionTokens } from "@/utils/tokenizer";
+import { createCompletion, createEmbedding, createModeration, getPayload } from "@/lib/openai";
+import { estimateEmbeddingTokens, estimateTotalCompletionTokens } from "@/utils/tokenizer";
+import { CreateEmbeddingResponse } from "openai";
+import { backOff } from "exponential-backoff";
 
 const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
+
+  // Use only by myself
+  bot.use(async (ctx,next) => {
+    const fromId = ctx.message?.from.id || (ctx.update as any)?.callback_query?.from.id || (ctx.update as any)?.pre_checkout_query?.from.id
+    if (fromId !== 1021173367) {
+      return;
+    } 
+    next()
+  })
+
   // Rate limiting middleware
   bot.use(async (ctx, next) => {
     if (ctx.message?.from.is_bot) {
@@ -210,7 +230,7 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
       }
     }
 
-    if (data == "Question") {
+    if (data == "General Question" || data == "PDF Question") {
       if ((userData.tokens as number) <= 0) {
         ctx.reply(INSUFFICIENT_TOKENS_MESSAGE, {
           reply_to_message_id: messageId,
@@ -304,9 +324,9 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
 
       // Acquire a lock on the user resource
       const userKey = `user:${userId}`;
-      const userLockResource = `locks:user:image:${userId}`;
+      const userLockResource = `locks:user:token:${userId}`;
       try {
-        let lock = await redlock.acquire([userLockResource], 2 * 60 * 1000);
+        let lock = await redlock.acquire([userLockResource], 5 * 60 * 1000);
 
         try {
           const rateLimitResult = await checkCompletionsRateLimits(userId);
@@ -326,6 +346,15 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
             return;
           }
 
+          ctx.reply(MESSAGE_ACCEPTANCE_MESSAGE, {
+            reply_to_message_id: messageId,
+          })
+
+          const totalTokensRemaining = parseInt(
+            (await hget(userKey, "tokens")) || "0"
+          );
+          console.log(`Total tokens remaining: ${totalTokensRemaining}`)
+
           const sanitizedQuestion = text.replace(/(\r\n|\n|\r)/gm, "");
 
           const moderationReponse = await createModeration(sanitizedQuestion);
@@ -336,11 +365,6 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
             });
             return;
           }
-
-          const totalTokensRemaining = parseInt(
-            (await hget(userKey, "tokens")) || "0"
-          );
-          console.log(`Total tokens remaining: ${totalTokensRemaining}`)
 
           const estimatedTokensForRequest =
             estimateTotalCompletionTokens(sanitizedQuestion);
@@ -359,14 +383,30 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
 
           const body = getPayload(sanitizedQuestion, "gpt-3.5-turbo");
           const completion = await createCompletion(body);
+          if (!completion) {
+            console.error("Completion failed");
+            ctx.reply(INTERNAL_SERVER_ERROR_MESSAGE, {
+              reply_to_message_id: messageId,
+            });
+            return;  
+          }
           const tokensUsed = completion?.usage?.total_tokens || 0;
           const totalTokensRemainingAfterRequest =
             totalTokensRemaining - tokensUsed;
           console.log(`Tokens used total: ${tokensUsed}, prompt tokens: ${completion?.usage?.prompt_tokens}, completion tokens: ${completion?.usage?.completion_tokens}`);
 
+            const updateDbTokens = await updateUserTokens(userId, totalTokensRemainingAfterRequest);
+
+          if (!updateDbTokens) {
+            console.error("Failed to update user tokens , supabase error");
+            ctx.reply(INTERNAL_SERVER_ERROR_MESSAGE, {
+              reply_to_message_id: messageId,
+            });
+          }
+
           const redisMulti = getRedisClient().multi(); // Start a transaction
           redisMulti.hset(userKey, {
-            tokens: totalTokensRemainingAfterRequest,
+            tokens: totalTokensRemainingAfterRequest > 0 ? totalTokensRemainingAfterRequest : 0,
           });
           await redisMulti.exec();
 
@@ -392,9 +432,205 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
         });
       }
     } else if (data == "PDF Question") {
-      ctx.reply("Pdf Question", {
+       const { text } = message;
+
+      // Acquire a lock on the user resource
+      const userKey = `user:${userId}`;
+      const userLockResource = `locks:user:token:${userId}`;
+      try {
+        let lock = await redlock.acquire([userLockResource], 5 * 60 * 1000);
+
+        try {
+          const rateLimitResult = await checkCompletionsRateLimits(userId);
+
+          if (!rateLimitResult.result.success) {
+            console.error("Rate limit exceeded");
+            ctx.reply(
+              getEmbeddingsRateLimitResponse(
+                rateLimitResult.hours,
+                rateLimitResult.minutes,
+                rateLimitResult.seconds
+              ),
+              {
+                reply_to_message_id: messageId,
+              }
+            );
+            return;
+          }
+
+          ctx.reply(MESSAGE_ACCEPTANCE_MESSAGE, {
+            reply_to_message_id: messageId,
+          })
+
+          const totalTokensRemaining = parseInt(
+            (await hget(userKey, "tokens")) || "0"
+          );
+          console.log(`Total tokens remaining: ${totalTokensRemaining}`)
+
+          const sanitizedQuestion = text.replace(/(\r\n|\n|\r)/gm, "");
+          console.log(`Sanitized question: ${sanitizedQuestion}`)
+
+          const moderationReponse = await createModeration(sanitizedQuestion);
+          if (moderationReponse?.results?.[0]?.flagged) {
+            console.error("Question is not allowed");
+            ctx.reply(MODERATION_ERROR_MESSAGE, {
+              reply_to_message_id: messageId,
+            });
+            return;
+          }
+
+          const estimatedTokensForEmbeddingsRequest = estimateEmbeddingTokens(sanitizedQuestion);
+          console.log(
+            `Estimated tokens for embeddings request: ${estimatedTokensForEmbeddingsRequest}`
+          );
+
+          if (totalTokensRemaining < estimatedTokensForEmbeddingsRequest + CONTEXT_TOKENS_CUTOFF + 500) {
+            console.error("Insufficient tokens");
+            ctx.reply(INSUFFICIENT_TOKENS_MESSAGE, {
+              reply_to_message_id: messageId,
+            });
+          }
+          
+          await ctx.sendChatAction("typing");
+
+          let embeddingResult: CreateEmbeddingResponse | null = null;
+          try {
+            // Retry with exponential backoff in case of error. Typically, this is due to too_many_requests
+            embeddingResult = await backOff(
+              () => createEmbedding({input: sanitizedQuestion, model: 'text-embedding-ada-002'}),
+              {
+                startingDelay: 100000,
+                numOfAttempts: 10,
+              }
+            );
+          } catch (error) {
+            console.error(`Embedding creation error: `, error);
+          }
+
+          console.log(`Embedding result: ${JSON.stringify(embeddingResult)}`)
+          const totalTokensUsedForEmbeddingsRequest = embeddingResult?.usage?.total_tokens || 0;
+          const promptEmbedding = embeddingResult?.data?.[0]?.embedding;
+
+          if (!promptEmbedding) {
+            console.error("Embedding failed");
+            ctx.reply(INTERNAL_SERVER_ERROR_MESSAGE, {
+              reply_to_message_id: messageId,
+            });
+            return;
+          }
+          
+          const documents = await matchDocuments(promptEmbedding);
+          
+          if (!documents) {
+             const remainingTokens = totalTokensRemaining - totalTokensUsedForEmbeddingsRequest;
+            const updateDbTokens = await updateUserTokens(userId, remainingTokens);
+
+          if (!updateDbTokens) {
+            console.error("Failed to update user tokens , supabase error");
+            ctx.reply(INTERNAL_SERVER_ERROR_MESSAGE, {
+              reply_to_message_id: messageId,
+            });
+          }
+          const redisMulti = getRedisClient().multi(); // Start a transaction
+          redisMulti.hset(userKey, {
+            tokens: remainingTokens > 0 ? remainingTokens : 0,
+          });
+          await redisMulti.exec();
+            console.error("Supabase query failed for mathcing documents");
+            ctx.reply(UNANSWERED_QUESTION_MESSAGE_PDF, {
+              reply_to_message_id: messageId,
+            });
+            return;
+          }
+          
+          let tokenCount = 0;
+          let contextText = "";
+
+          // Concat matched documents
+          for (let i = 0; i < documents.length; i++) {
+            const document = documents[i];
+            const content = document.content;
+            const url = document.url;
+            tokenCount += document.token_count;
+
+            // Limit context to max 1500 tokens (configurable)
+            if (tokenCount > CONTEXT_TOKENS_CUTOFF) {
+              break;
+            }
+
+            contextText += `${content.trim()}\nSOURCE: ${url}\n---\n`;
+          }
+
+          const prompt = `\
+          You are a helpful assistant. When given CONTEXT you answer questions using only that information,
+          and you always format your output in markdown. You include code snippets if relevant. If you are unsure and the answer
+          is not explicitly written in the CONTEXT provided, you say
+          "Sorry, I don't know how to help with that." If the CONTEXT includes
+          source URLs include them under a SOURCES heading at the end of your response. Always include all of the relevant source urls
+          from the CONTEXT, but never list a URL more than once (ignore trailing forward slashes when comparing for uniqueness). Never include URLs that are not in the CONTEXT sections. Never make up URLs
+
+      CONTEXT:
+      ${contextText}
+
+      QUESTION: """
+      ${sanitizedQuestion}
+      """`;
+
+          const payload = getPayload(prompt, "gpt-3.5-turbo");
+
+          const completion = await createCompletion(payload)
+
+          if (!completion) {
+            console.error(`Completion error: `, completion);
+            ctx.reply(INTERNAL_SERVER_ERROR_MESSAGE, {
+              reply_to_message_id: messageId,
+            });
+            return;
+          }
+
+          const totalTokensUsedForCompletionRequest = completion?.usage?.total_tokens || 0; 
+          const totalTokensUsed = totalTokensUsedForEmbeddingsRequest + totalTokensUsedForCompletionRequest;
+          const remainingTokens = totalTokensRemaining - totalTokensUsed;
+
+          const updateDbTokens = await updateUserTokens(userId, remainingTokens);
+
+          if (!updateDbTokens) {
+            console.error("Failed to update user tokens , supabase error");
+            ctx.reply(INTERNAL_SERVER_ERROR_MESSAGE, {
+              reply_to_message_id: messageId,
+            });
+          }
+
+          const redisMulti = getRedisClient().multi(); // Start a transaction
+          redisMulti.hset(userKey, {
+            tokens: remainingTokens > 0 ? remainingTokens : 0,
+          });
+          await redisMulti.exec();
+
+          console.log(`Completion: `, JSON.stringify(completion, null, 2));
+          
+          // get a json object from the response
+          ctx.reply(completion.choices[0].message?.content as string, { reply_to_message_id: messageId });
+
+        } catch (err) {
+          console.error(err);
+          ctx.reply(INTERNAL_SERVER_ERROR_MESSAGE, {
+            reply_to_message_id: messageId,
+          });
+        } finally {
+          // Release the lock
+          lock.release();
+        }
+      } catch (err) {
+        console.error(err);
+        ctx.reply(INTERNAL_SERVER_ERROR_MESSAGE, {
+          reply_to_message_id: messageId,
+        });
+      }
+    } else if (data == "Goal") {
+      ctx.reply(WORKING_ON_NEW_FEATURES_MESSAGE, {
         reply_to_message_id: messageId,
-      });
+      })
     } else if (
       data == "Basic Plan" ||
       data == "Pro Plan" ||
@@ -466,21 +702,28 @@ You have access to:
     );
   });
 
-  // bot.command("dt", async (ctx) => {
-  //   const urls = await getUserUrls(ctx.message.from.id);
-  //   const messageId = ctx.message.message_id;
+  bot.command("dt", async (ctx) => { 
+    const urls = await getUserDistinctUrls(ctx.message.from.id);
 
-  //   if (urls.length === 0) {
-  //     ctx.reply("You have not yet trained any datasets", {
-  //       reply_to_message_id: messageId,
-  //     });
-  //     return;
-  //   }
-  //   const message = urls.map((url) => url.url).join("\n");
-  //   ctx.reply("Here are the datasets you have trained: \n" + message, {
-  //     reply_to_message_id: messageId,
-  //   });
-  // });
+    const messageId = ctx.message.message_id;
+
+    if (!urls) {
+      ctx.reply(INTERNAL_SERVER_ERROR_MESSAGE, {
+        reply_to_message_id: messageId,
+      });
+    }
+
+    if (urls && urls.length === 0) {
+      ctx.reply(NO_DATASETS_MESSAGE, {
+        reply_to_message_id: messageId,
+      });
+      return;
+    }
+    const message = (urls as string[]).join("\n");
+    ctx.reply("👋 Here's a list of all the PDF files I've processed and trained my model on. 📚💻 \n\n" + message, {
+      reply_to_message_id: messageId,
+    });
+  });
 
   // bot.command("url", async (ctx) => {
   //   const url = ctx.message.text.split(" ")[1];
@@ -766,142 +1009,6 @@ You have access to:
           }),
         },
       });
-
-      return;
-
-      //     const question = (ctx.message as any).text;
-      //     if (question.length > MAX_PROMPT_LENGTH) {
-      //       ctx.reply("Please shorten your question");
-      //       return;
-      //     }
-
-      //     const rateLimitResult = await checkCompletionsRateLimits(
-      //       ctx.message.from.id
-      //     );
-
-      //     if (!rateLimitResult.result.success) {
-      //       console.error("Rate limit exceeded");
-      //       ctx.reply(
-      //         "Too many requests, please try again in " +
-      //           rateLimitResult.hours +
-      //           " hours and " +
-      //           rateLimitResult.minutes +
-      //           " minutes"
-      //       );
-      //       return;
-      //     }
-
-      //     const sanitizedQuestion = question.replace(/(\r\n|\n|\r)/gm, "");
-
-      //     const moderationReponse = await createModeration(sanitizedQuestion);
-      //     if (moderationReponse?.results?.[0]?.flagged) {
-      //       console.error("Question is not allowed");
-      //       ctx.reply("Your question is not allowed per OpenAI's guidelines");
-      //       return;
-      //     }
-
-      //     ctx.sendChatAction("typing");
-
-      //     let embeddingResult: CreateEmbeddingResponse | undefined = undefined;
-      //     try {
-      //       // Retry with exponential backoff in case of error. Typically, this is due to too_many_requests
-      //       embeddingResult = await backOff(
-      //         () => createEmbedding(sanitizedQuestion),
-      //         {
-      //           startingDelay: 1000,
-      //           numOfAttempts: 10,
-      //         }
-      //       );
-      //     } catch (error) {
-      //       console.error(error);
-      //       ctx.reply("Sorry, an error occured. Please try again later");
-      //       return;
-      //     }
-
-      //     const promptEmbedding = embeddingResult?.data?.[0]?.embedding;
-
-      //     if (!promptEmbedding) {
-      //       ctx.reply("Sorry, an error occured. Please try again later");
-      //       return;
-      //     }
-
-      //     const { data: documents, error } = await supabaseClient.rpc(
-      //       "match_documents",
-      //       {
-      //         query_embedding: promptEmbedding,
-      //         similarity_threshold: 0.1,
-      //         match_count: 10,
-      //       }
-      //     );
-
-      //     if (error) {
-      //       console.error(error);
-      //       ctx.reply("Sorry, an error occured. Please try again later");
-      //       return;
-      //     }
-
-      //     if (!documents || documents.length === 0) {
-      //       ctx.reply("Sorry, I could not find any matching documents");
-      //       return;
-      //     }
-
-      //     let tokenCount = 0;
-      //     let contextText = "";
-
-      //     // Concat matched documents
-      //     for (let i = 0; i < documents.length; i++) {
-      //       const document = documents[i];
-      //       const content = document.content;
-      //       const url = document.url;
-      //       tokenCount += document.token_count;
-
-      //       // Limit context to max 1500 tokens (configurable)
-      //       if (tokenCount > CONTEXT_TOKENS_CUTOFF) {
-      //         break;
-      //       }
-
-      //       contextText += `${content.trim()}\nSOURCE: ${url}\n---\n`;
-      //     }
-
-      //     const prompt = `\
-      //     You are a helpful assistant. When given CONTEXT you answer questions using only that information,
-      //     and you always format your output in markdown. You include code snippets if relevant. If you are unsure and the answer
-      //     is not explicitly written in the CONTEXT provided, you say
-      //     "Sorry, I don't know how to help with that." If the CONTEXT includes
-      //     source URLs include them under a SOURCES heading at the end of your response. Always include all of the relevant source urls
-      //     from the CONTEXT, but never list a URL more than once (ignore trailing forward slashes when comparing for uniqueness). Never include URLs that are not in the CONTEXT sections. Never make up URLs
-
-      // CONTEXT:
-      // ${contextText}
-
-      // QUESTION: """
-      // ${sanitizedQuestion}
-      // """`;
-
-      //     const payload = getPayload(prompt, "gpt-3.5-turbo");
-
-      //     const completion = await fetch(
-      //       "https://api.openai.com/v1/chat/completions",
-      //       {
-      //         headers: {
-      //           "Content-Type": "application/json",
-      //           Authorization: `Bearer ${process.env.OPENAI_API_KEY ?? ""}`,
-      //         },
-      //         method: "POST",
-      //         body: JSON.stringify(payload),
-      //       }
-      //     );
-
-      //     if (!completion.ok) {
-      //       console.error(completion);
-      //       ctx.reply("Sorry, an error occured. Please try again later");
-      //       return;
-      //     }
-
-      //     // get a json object from the response
-      //     const { choices } = await completion.json();
-      //     ctx.reply(choices[0].message.content, { reply_to_message_id: messageId });
-      //     processing = false;
     }
 
     //  check if message is a successful payment

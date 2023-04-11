@@ -1,6 +1,6 @@
 import { Database } from "@/types/supabase";
 
-import { User, createClient } from "@supabase/supabase-js";
+import {  createClient } from "@supabase/supabase-js";
 
 interface Client {
   url?: string;
@@ -27,6 +27,12 @@ export type SelectUser = Database["public"]["Tables"]["users"]["Row"];
 export type InsertDocuments =
   Database["public"]["Tables"]["documents"]["Insert"];
 export type SelectDocuments = Database["public"]["Tables"]["documents"]["Row"];
+
+
+export type MatchDocumentsReturn =
+  Database["public"]["Functions"]["match_documents"]["Returns"];
+
+export type DistinctUrls = Database["public"]["Views"]["distinct_user_file_url"]["Row"]["url"];
 
 /**
  * Get user data from the database
@@ -65,7 +71,7 @@ export const checkUserFileHashExist = async (
   try {
     const { data, error } = await supabaseClient
       .from("distinct_user_file_hashes")
-      .select('*')
+      .select("*")
       .eq("user_id", user_id)
       .eq("hash", hash)
       .limit(1);
@@ -80,7 +86,7 @@ export const checkUserFileHashExist = async (
     console.error(`Exception occurred while checking file hash: ${error}`);
     return false;
   }
-}
+};
 
 /** Create new user in the database
  *
@@ -114,18 +120,27 @@ export const updateImageAndTokensTotal = async (
   tokens_added: number
 ): Promise<boolean> => {
   try {
-    const { error } = await supabaseClient.rpc('increment_two_fields', {x1: image_generations_added, x2: image_generations_added, x3: tokens_added, row_id: user_id});
+    const { error } = await supabaseClient.rpc("increment_two_fields", {
+      x1: image_generations_added,
+      x2: image_generations_added,
+      x3: tokens_added,
+      row_id: user_id,
+    });
     if (error) {
-      console.error(`Error while updating user image generations remaining and tokens: ${error}`);
+      console.error(
+        `Error while updating user image generations remaining and tokens: ${error}`
+      );
       return false;
     } else {
       return true;
     }
   } catch (e) {
-    console.error(`Exception occurred while updating user image generations remaining and tokens: ${e}`);
+    console.error(
+      `Exception occurred while updating user image generations remaining and tokens: ${e}`
+    );
     return false;
   }
-}
+};
 
 /**
  * Update user image generations remaining in the database
@@ -145,16 +160,20 @@ export const updateImageGenerationsRemaining = async (
       .eq("user_id", user_id);
 
     if (error) {
-      console.error(`Error while updating user image generations remaining: ${error}`);
+      console.error(
+        `Error while updating user image generations remaining: ${error}`
+      );
       return false;
     } else {
       return true;
     }
   } catch (err) {
-    console.error(`Exception occurred while updating user image generations remaining: ${err}`);
+    console.error(
+      `Exception occurred while updating user image generations remaining: ${err}`
+    );
     return false;
   }
-}
+};
 
 /**
  * Update user token count in the database
@@ -231,7 +250,7 @@ export const createDocumentsSingle = async (
 
 /**
  * Creta new payment in the database
- * 
+ *
  * @param PaymentDTO
  * @returns PaymentResponse | null
  */
@@ -275,30 +294,93 @@ export const createNewPayment = async ({
   }
 };
 
-
+/**
+ * Upload file to Supabase storage
+ * @param file
+ * @returns string | null
+ */
 export const uploadFileToSupabaseStorage = async (
   file: Buffer
 ): Promise<string | null> => {
   try {
-    const bucketName = 'user-files';
+    const bucketName = "user-files";
     const fileName = `pdf/${Date.now()}.pdf`;
 
     const { error } = await supabaseClient.storage
       .from(bucketName)
       .upload(fileName, file, {
-        contentType: 'application/pdf',
-        upsert: false
-      })
+        contentType: "application/pdf",
+        upsert: false,
+      });
 
     if (error) {
-      console.error(`Error while uploading file to Supabase storage: ${error.message}`);
+      console.error(
+        `Error while uploading file to Supabase storage: ${error.message}`
+      );
       return null;
     } else {
       return `https://osvtgvfbqnfwkwhrdmek.supabase.co/storage/v1/object/public/user-files/${fileName}`;
     }
   } catch (err) {
-    console.error(`Exception occurred while uploading file to Supabase storage: ${err}`);
+    console.error(
+      `Exception occurred while uploading file to Supabase storage: ${err}`
+    );
+    return null;
+  }
+};
+
+/**
+ * Match supabase document embeddings with the given embeddings cosine similarity
+ */
+export const matchDocuments = async (
+  embeddings: unknown
+): Promise<MatchDocumentsReturn | null> => {
+  try {
+    const { data: documents, error } = await supabaseClient.rpc(
+      "match_documents",
+      {
+        query_embedding: embeddings as string,
+        similarity_threshold: 0.1,
+        match_count: 10,
+      }
+    );
+    if (error) {
+      console.error(`Error while matching documents: ${JSON.stringify(error)}`);
+      return null;
+    }
+    if (!documents || documents.length === 0) {
+      console.error(`No documents found`);
+      return null;
+    }
+    return documents;
+  } catch (err) {
+    console.error(`Exception occurred while matching documents: ${err}`);
+    return null;
+  }
+};
+
+
+export const getUserDistinctUrls = async (
+  user_id: number
+): Promise<DistinctUrls[] | null> => {
+  try {
+    const { data: urls, error } = await supabaseClient
+      .from("distinct_user_file_url")
+      .select("url")
+      .eq("user_id", user_id)
+
+    if (error) {
+      console.error(`Error while getting user distinct urls: ${error}`);
+      return null;
+    } 
+    else {
+      if (!urls || urls.length === 0) {
+        return []
+      }
+      return urls.map((url) => url.url);
+    }
+  } catch (err) {
+    console.error(`Exception occurred while getting user distinct urls: ${err}`);
     return null;
   }
 }
-
