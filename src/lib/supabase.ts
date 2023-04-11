@@ -365,7 +365,7 @@ export const getUserDistinctUrls = async (
 ): Promise<DistinctUrls[] | null> => {
   try {
     const { data: urls, error } = await supabaseClient
-      .from("distinct_user_file_url")
+      .from("documents")
       .select("url")
       .eq("user_id", user_id)
 

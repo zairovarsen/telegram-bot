@@ -14,6 +14,7 @@ export interface Database {
           content: string | null
           created_at: string
           embedding: string | null
+          filename: string | null
           hash: string | null
           id: number
           token_count: number | null
@@ -25,6 +26,7 @@ export interface Database {
           content?: string | null
           created_at?: string
           embedding?: string | null
+          filename?: string | null
           hash?: string | null
           id?: number
           token_count?: number | null
@@ -36,6 +38,7 @@ export interface Database {
           content?: string | null
           created_at?: string
           embedding?: string | null
+          filename?: string | null
           hash?: string | null
           id?: number
           token_count?: number | null
@@ -125,7 +128,6 @@ export interface Database {
       distinct_user_file_hashes: {
         Row: {
           hash: string | null
-          user_id: number | null
         }
       }
       distinct_user_file_url: {
