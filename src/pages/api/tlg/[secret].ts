@@ -482,6 +482,7 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
           const sanitizedQuestion = text.replace(/(\r\n|\n|\r)/gm, "");
 
           const moderationReponse = await createModeration(sanitizedQuestion);
+          console.log(`Moderation response: ${moderationReponse?.results?.[0]?.flagged}`)
           if (moderationReponse?.results?.[0]?.flagged) {
             console.error("Question is not allowed");
             ctx.reply(MODERATION_ERROR_MESSAGE, {
@@ -507,7 +508,6 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
           await ctx.sendChatAction("typing");
 
           const body = getPayload(sanitizedQuestion, "gpt-3.5-turbo");
-          console.log(`Paylod for completion ready : ${body}`)
           const completion = await createCompletion(body);
           if (!completion) {
             console.error("Completion failed");

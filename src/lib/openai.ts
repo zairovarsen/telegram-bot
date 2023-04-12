@@ -53,6 +53,7 @@ export const createCompletion = async (
   payload: CreateChatCompletionRequest
 ): Promise<CreateChatCompletionResponse | null> => {
   try {
+    console.log('Calling completion if not vercel sucks')
     const completion = await openai.createChatCompletion(payload);
     return completion.data;
   } catch (err) {
