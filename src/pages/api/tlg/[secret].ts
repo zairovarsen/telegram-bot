@@ -76,7 +76,7 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
   // Use only by myself
   bot.use(async (ctx,next) => {
     const fromId = ctx.message?.from.id || (ctx.update as any)?.callback_query?.from.id || (ctx.update as any)?.pre_checkout_query?.from.id
-    console.log(JSON.stringify(ctx));
+    console.log(`From: `, fromId)
     if (fromId !== 1021173367) {
       return;
     } 
