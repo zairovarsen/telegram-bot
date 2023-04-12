@@ -81,7 +81,7 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
       return;
     } 
 
-    next()
+    await next()
   })
 
   // Rate limiting middleware
@@ -89,6 +89,8 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
     if (ctx.message?.from.is_bot) {
       return;
     }
+
+    console.log('Next middleware is called')
 
     let userId = null;
 
@@ -116,6 +118,7 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
       return;
     }
 
+    console.log('Next middleware ended');
     await next();
   });
 
