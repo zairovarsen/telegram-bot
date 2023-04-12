@@ -37,7 +37,6 @@
     "range_check": "^2.0.4",
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "redlock": "^5.0.0-beta.2",
     "stripe": "^11.17.0",
     "telegraf": "^4.12.2",
     "typescript": "5.0.2"

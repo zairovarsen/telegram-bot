@@ -55,7 +55,7 @@ import {
   getUserDistinctUrls,
 } from "@/lib/supabase";
 import { bytesToMegabytes } from "@/utils/bytesToMegabytes";
-import { getRedisClient, hget, hgetAll, hmset, redlock } from "@/lib/redis";
+import { getRedisClient, hget, hgetAll, hmset, lock } from "@/lib/redis";
 
 import { ConversionModel, UserInfoCache } from "@/types";
 import { PreCheckoutQuery } from "telegraf/typings/core/types/typegram";
@@ -79,6 +79,7 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
     if (fromId !== 1021173367) {
       return;
     } 
+
     next()
   })
 
@@ -138,7 +139,7 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
     }
 
     const key = `user:${userId}`;
-    let userDataCache = await hgetAll(key);
+    let userDataCache: any = await hgetAll(key);
     console.log(`User from cache: `, userDataCache);
 
     if (!userDataCache || !Object.keys(userDataCache).length) {
@@ -235,13 +236,14 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
       const userLockResource = `locks:user:token:${userId}`;
             const {duration, file_id} = message.voice;
       try {
-        let lock = await redlock.acquire([userLockResource], 2 * 60 * 1000);
+        let unlock = await lock(userLockResource);
         let localFilePath = "";
         let wavFilePath = "";
 
         try {
         
       const totalTokens = parseInt((await hget(key, "tokens")) || "0");
+      console.log(`Total tokens before request: `, totalTokens)
       const tokensToProcessAudio = calculateWhisperTokens(duration);
 
       if (totalTokens < tokensToProcessAudio) {
@@ -310,7 +312,7 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
       return;
     } finally {
       // Release the lock
-      await lock.release();
+      await unlock();
       if (localFilePath) {
         unlinkSync(localFilePath);
       }
@@ -468,7 +470,7 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
       const userKey = `user:${userId}`;
       const userLockResource = `locks:user:token:${userId}`;
       try {
-        let lock = await redlock.acquire([userLockResource], 5 * 60 * 1000);
+        let unlock = await lock(userLockResource);
 
         try {
           const totalTokensRemaining = parseInt(
@@ -515,6 +517,7 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
           const totalTokensRemainingAfterRequest =
             totalTokensRemaining - tokensUsed;
           console.log(`Tokens used total: ${tokensUsed}, prompt tokens: ${completion?.usage?.prompt_tokens}, completion tokens: ${completion?.usage?.completion_tokens}`);
+          console.log(`Tokens remained after request : ${totalTokensRemainingAfterRequest}`)
 
             const updateDbTokens = await updateUserTokens(userId, totalTokensRemainingAfterRequest);
 
@@ -543,7 +546,7 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
             reply_to_message_id: messageId,
           });
         } finally {
-          lock.release();
+          await unlock()
         }
       } catch (err) {
         // Release the lock
@@ -559,7 +562,7 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
       const userKey = `user:${userId}`;
       const userLockResource = `locks:user:token:${userId}`;
       try {
-        let lock = await redlock.acquire([userLockResource], 5 * 60 * 1000);
+        let unlock = await lock(userLockResource);
 
         try {
 
@@ -720,7 +723,7 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
           });
         } finally {
           // Release the lock
-          lock.release();
+          await unlock()
         }
       } catch (err) {
         console.error(err);
@@ -988,12 +991,10 @@ You have access to:
       const { from, successful_payment } = ctx.message as any;
       const userKey = `user:${from.id}`;
       const userImageLockResource = `locks:user:image:${from.id}`;
-      const userPdfLockResoruce = `locks:user:pdf:${from.id}`;
+      const userPdfLockResoruce = `locks:user:token:${from.id}`;
       try {
-        let lock = await redlock.acquire(
-          [userImageLockResource, userPdfLockResoruce],
-          5 * 60 * 1000
-        );
+        let unlockImage = await lock(userImageLockResource);
+        let unlockPdf = await lock(userPdfLockResoruce);
         const {
           total_amount,
           currency,
@@ -1072,7 +1073,8 @@ Learn more about your current limit at /limit. Thank you for choosing us, and we
             reply_to_message_id: messageId,
           });
         } finally {
-          await lock.release();
+          await unlockImage();
+          await unlockPdf();
         }
       } catch (error) {
         console.error(error);

@@ -1,4 +1,4 @@
-import { getRedisClient, hget, redlock } from "@/lib/redis";
+import { getRedisClient, hget, lock } from "@/lib/redis";
 import {
   IMAGE_GENERATION_ERROR_MESSAGE,
   INSUFFICEINT_IMAGE_GENERATIONS_MESSAGE,
@@ -131,7 +131,7 @@ export async function processImagePromptOpenJourney(
   const userKey = `user:${userId}`;
   const userLockResource = `locks:user:image:${userId}`;
   try {
-    let lock = await redlock.acquire([userLockResource], 5 * 60 * 1000);
+    const unlock = await lock(userLockResource);
 
     try {
       const imageGenerationsRemaining = parseInt(
@@ -206,7 +206,7 @@ export async function processImagePromptOpenJourney(
       return { success: false, errorMessage: INTERNAL_SERVER_ERROR_MESSAGE };
     } finally {
       // Release the lock when we're done
-      await lock.release();
+      await unlock();
     }
   } catch (err) {
     // Failed to acquire lock
@@ -233,7 +233,7 @@ export async function processImage(
   const userKey = `user:${userId}`;
   const userLockResource = `locks:user:image:${userId}`;
   try {
-    let lock = await redlock.acquire([userLockResource], 5 * 60 * 1000);
+    let unlock = await lock(userLockResource);
     // used to remove the image from cloudinary after some time
     let public_id = "";
 
@@ -342,7 +342,7 @@ export async function processImage(
         await deleteImage(public_id);
       }
       // Release the lock when we're done
-      await lock.release();
+      await unlock();
     }
   } catch (err) {
     // Failed to acquire lock

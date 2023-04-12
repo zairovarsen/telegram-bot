@@ -1,6 +1,6 @@
 import { pluralize } from "@/utils/pluralize";
 import { Ratelimit } from "@upstash/ratelimit";
-import { getRedisUpstashClient } from "./redis";
+import { getRedisClient } from "./redis";
 
 enum RateLimitTypes {
   PDF = "pdf",
@@ -13,35 +13,11 @@ const rateLimitTypeToKey = (type: RateLimitTypes, userId: number) => {
   return `${type}:${userId}`;
 };
 
-// const rateLimitTypeToKey = (type: 'pdf' | 'url' | 'completion', userId: number) => {
-//   return `${type}:${userId}`;
-// }
-
-// // export const checkIpRateLimit = async (ip: string) => {
-// //   const ratelimit = new Ratelimit({
-// //     redis: getRedisClient(),
-// //     limiter: Ratelimit.fixedWindow(100, "1 m"),
-// //     analytics: true,
-// //   });
-
-// //   const result = await ratelimit.limit(`${ip}`);
-
-// //   // Calcualte the remaining time until generations are reset
-// //   const diff = Math.abs(
-// //     new Date(result.reset).getTime() - new Date().getTime()
-// //   );
-// //   const hours = Math.floor(diff / 1000 / 60 / 60);
-// //   const minutes = Math.floor(diff / 1000 / 60) - hours * 60;
-// //   const seconds = Math.floor(diff / 1000) - hours * 60 * 60 - minutes * 60;
-
-// //   return { result, hours, minutes, seconds };
-// // }
-
 export const checkCompletionsRateLimits = async (userId: number) => {
   // For now, impose a hard limit of 10 completions per day
   // per user. Later, tie it to the plan associated to a team/project.
   const ratelimit = new Ratelimit({
-    redis: getRedisUpstashClient(),
+    redis: getRedisClient(),
     limiter: Ratelimit.fixedWindow(5, "1 m"),
     analytics: true,
   });
@@ -59,27 +35,6 @@ export const checkCompletionsRateLimits = async (userId: number) => {
   return { result, hours, minutes, seconds };
 };
 
-// export const checkEmbeddingsRateLimit = async (type: 'pdf' | 'url',userId: number) => {
-//   // For now, impose a hard limit of 1 pdf file and 1 url processing per 24 hours
-//   // per user. Later, tie it to the plan associated to a team/project.
-//   const ratelimit = new Ratelimit({
-//     redis: getRedisClient(),
-//     limiter: Ratelimit.fixedWindow(10, "1 m"),
-//     analytics: true,
-//   });
-
-//   const result = await ratelimit.limit(rateLimitTypeToKey(type, userId));
-
-//   // Calcualte the remaining time until generations are reset
-//   const diff = Math.abs(
-//     new Date(result.reset).getTime() - new Date().getTime()
-//   );
-//   const hours = Math.floor(diff / 1000 / 60 / 60);
-//   const minutes = Math.floor(diff / 1000 / 60) - hours * 60;
-
-//   return { result, hours, minutes };
-// };
-
 /**
  * Check the rate limit for a user, 10 requests per minute
  *
@@ -88,7 +43,7 @@ export const checkCompletionsRateLimits = async (userId: number) => {
  */
 export const checkUserRateLimit = async (userId: number) => {
   const ratelimit = new Ratelimit({
-    redis: getRedisUpstashClient(),
+    redis: getRedisClient(),
     limiter: Ratelimit.fixedWindow(10, "1 m"),
     analytics: true,
   });
@@ -110,7 +65,7 @@ export const checkUserRateLimit = async (userId: number) => {
 
 export const imageGenerationRateLimit = async (userId: number) => {
   const rateLimit = new Ratelimit({
-    redis: getRedisUpstashClient(),
+    redis: getRedisClient(),
     limiter: Ratelimit.fixedWindow(2, "1 m"),
     analytics: true,
   });
@@ -132,7 +87,7 @@ export const imageGenerationRateLimit = async (userId: number) => {
 
 export const pdfGenerationRateLimit = async (userId: number) => {
   const rateLimit = new Ratelimit({
-    redis: getRedisUpstashClient(),
+    redis: getRedisClient(),
     limiter: Ratelimit.fixedWindow(2, "1 m"),
     analytics: true,
   });
@@ -155,7 +110,7 @@ export const pdfGenerationRateLimit = async (userId: number) => {
 // IP rate limit, 30 requests per minute
 export const ipRateLimit = async (ip: string) => {
   const rateLimit = new Ratelimit({
-    redis: getRedisUpstashClient(),
+    redis: getRedisClient(),
     limiter: Ratelimit.fixedWindow(30, "1 m"),
     analytics: true,
   });

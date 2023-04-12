@@ -1,17 +1,12 @@
 
 
-import Redis from "ioredis";
-import Redlock, { ResourceLockedError } from "redlock";
-import { Redis as UpstashRedis } from '@upstash/redis';
-
-
+import { Redis } from '@upstash/redis';
 
 const monthBin = (date: Date) => {
     return `${date.getFullYear()}/${date.getMonth() + 1}`;
 }
 
 let redis: Redis | null = null;
-let upstashRedis: UpstashRedis | null = null;
 
 export const getUserEmbeddingsMonthTokenCountKey = (
     userId: number,
@@ -22,33 +17,13 @@ export const getUserEmbeddingsMonthTokenCountKey = (
 
 export const getRedisClient = () => {
     if (!redis) {
-        redis = new Redis(process.env.IOREDIS_URL as string)
+        redis = new Redis({
+           url: process.env.UPSTASH_URL || '',
+           token: process.env.UPSTASH_TOKEN || '', 
+        })
     }
     return redis;
 }
-
-export const getRedisUpstashClient = () => {
-  if (!upstashRedis) {
-    upstashRedis = new UpstashRedis({
-      url: process.env.UPSTASH_URL || '',
-      token: process.env.UPSTASH_TOKEN || '',
-    });
-  }
-  return upstashRedis;
-}
-
-export const redlock = new Redlock([getRedisClient()], {   retryCount: 10,
-  retryDelay: 3000,   retryJitter: 200});
-
-redlock.on("error", (error) => {
-  // Ignore cases where a resource is explicitly marked as locked on a client.
-  if (error instanceof ResourceLockedError) {
-    return;
-  }
-
-  // Log all other errors.
-  console.error(error);
-});
 
 export const get = async (key: string): Promise<string | null> => {
     try {
@@ -65,7 +40,7 @@ export const setWithExpiration = async (
     expirationInSeconds: number,
   ) => {
     try {
-      await getRedisClient().set(key, value, 'EX', expirationInSeconds);
+      await getRedisClient().set(key, value, {ex: expirationInSeconds});
     } catch (e) {
       console.error('Redis `set` error', e);
     }
@@ -140,3 +115,58 @@ export const hget = async (key: string, field: string): Promise<string | null> =
       console.error('Redis `del` error', e);
     }
   };
+
+
+
+const client = getRedisClient();
+
+const DEFAULT_TIMEOUT = 5000;
+const DEFAULT_RETRY_DELAY = 500;
+
+async function acquireLock( lockName:string, timeout:number, retryDelay:number) {
+  const lockTimeoutValue = Date.now() + timeout + 1;
+  const result = await client.set(lockName, lockTimeoutValue, {
+    px: timeout,
+    nx: true,
+  });
+  if (result === null) {
+    throw new Error("Lock failed");
+  }
+  return lockTimeoutValue;
+}
+
+async function releaseLock(lockName: string, lockTimeoutValue:number) {
+  if (lockTimeoutValue > Date.now()) {
+    await client.del(lockName);
+  }
+}
+
+export function createRedisLock(retryDelay = DEFAULT_RETRY_DELAY) {
+  
+  async function lock(lockName:string, timeout = DEFAULT_TIMEOUT) {
+    if (!lockName) {
+      throw new Error(
+        "You must specify a lock string. It is on the redis key `lock.[string]` that the lock is acquired."
+      );
+    }
+
+    lockName = `lock.${lockName}`;
+
+    while (true) {
+      try {
+        const lockTimeoutValue = await acquireLock(
+          lockName,
+          timeout,
+          retryDelay
+        );
+        return () => releaseLock(lockName, lockTimeoutValue);
+      } catch (err) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelay));
+      }
+    }
+  }
+
+  return lock ;
+}
+
+export const lock = createRedisLock();

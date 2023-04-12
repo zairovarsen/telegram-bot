@@ -8,7 +8,7 @@ import {
   MIN_CONTENT_LENGTH,
   UNABLE_TO_PROCESS_PDF_MESSAGE,
 } from "@/utils/constants";
-import { redlock, getRedisClient, hget } from "@/lib/redis";
+import { getRedisClient, hget, lock } from "@/lib/redis";
 import { InsertDocuments, checkUserFileHashExist, createDocumentsBatch, updateUserTokens, uploadFileToSupabaseStorage } from "@/lib/supabase";
 import { createEmbedding } from "@/lib/openai";
 import { backOff } from "exponential-backoff";
@@ -174,11 +174,11 @@ export async function processPdf(
   userId: number
 ): Promise<EmbeddingResult> {
   const userLockResource = `locks:user:token:${userId}`;
+  const key = `user:${userId}`;
   try {
     // Acquire a lock on the user resource
     // TODO: think of a good TTL value, 5 minutes for now
-    const key = `user:${userId}`;
-    let lock = await redlock.acquire([userLockResource], 5 * 60 * 1000);
+    let unlock = await lock(userLockResource)
     let embeddingsTokenCount = 0;
 
     const embeddingsData: InsertDocuments[] = [];
@@ -309,7 +309,7 @@ export async function processPdf(
       return { success: false, errorMessage: INTERNAL_SERVER_ERROR_MESSAGE };
     } finally {
       // Release the lock when we're done
-      await lock.release();
+      await unlock();
     }
   } catch (err) {
     // Error acquiring lock
