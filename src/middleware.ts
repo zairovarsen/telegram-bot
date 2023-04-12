@@ -38,7 +38,6 @@ export default async function middleware(req: NextRequest) {
     const signature = req.headers.get("upstash-signature");
 
     if (lastPart == process.env.NEXT_SECRET_KEY) {
-      console.log('called')
       return NextResponse.next();
     }
 
