@@ -506,10 +506,9 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
 
           await ctx.sendChatAction("typing");
 
-          console.log('Calling completion')
           const body = getPayload(sanitizedQuestion, "gpt-3.5-turbo");
+          console.log(`Paylod for completion ready : ${body}`)
           const completion = await createCompletion(body);
-          console.log(`Completion Returns: `)
           if (!completion) {
             console.error("Completion failed");
             ctx.reply(INTERNAL_SERVER_ERROR_MESSAGE, {
