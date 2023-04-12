@@ -38,7 +38,7 @@ export const getRedisUpstashClient = () => {
 }
 
 export const redlock = new Redlock([getRedisClient()], {   retryCount: 10,
-  retryDelay: 5000,   retryJitter: 200});
+  retryDelay: 3000,   retryJitter: 200});
 
 redlock.on("error", (error) => {
   // Ignore cases where a resource is explicitly marked as locked on a client.

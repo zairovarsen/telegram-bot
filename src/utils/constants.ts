@@ -22,8 +22,11 @@ export const EXCLUDE_LINK_LIST = [
 export const MAX_TOKENS_COMPLETION = 500;
 
 
-export const OPEN_AI_AUDIO_LIMIT = 25; // 25 MB
+export const OPEN_AI_AUDIO_LIMIT = 24; // it is 25 but we are leaving a buffer of 1 second
 
+export const AUIDO_FILE_EXCEEDS_LIMIT_MESSAGE = `
+To provide you with the best experience, we kindly request that you only send audio files no larger than 24 MB. This helps us process your files quickly and efficiently. If you have any questions or need assistance, feel free to reach out. Happy analyzing! 🚀
+`
 
 export const MAX_PROMPT_MESSAGE= `
 To get the best results from our InsightAI, please provide a maximum prompt length of 200 characters. This will help us generate more accurate and meaningful responses tailored to your needs. Thank you for using InsightAI! 😊`
@@ -225,7 +228,7 @@ We'll notify you as soon as the results are ready. 😊
 `;
 
 export const TEXT_GENERATION_MESSAGE = `
-🌟 Thank you for submitting your text! Our InsightAI bot can help you with the following tasks: 🌟
+🌟 Our InsightAI bot can help you with the following tasks: 🌟
 
 🔵 Imagine - Let Open Journey create a stunning image based on your text description.
 
@@ -350,4 +353,4 @@ export const allowedIpRanges = [
 ];
 
 export const INITIAL_TOKEN_COUNT = 100000;
-export const INITIAL_IMAGE_GENERATION_COUNT = 3;
+export const INITIAL_IMAGE_GENERATION_COUNT = 5;

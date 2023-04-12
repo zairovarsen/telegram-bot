@@ -34,6 +34,8 @@ import {
   NO_DATASETS_MESSAGE,
   WORKING_ON_NEW_FEATURES_MESSAGE,
   MESSAGE_ACCEPTANCE_MESSAGE,
+  AUIDO_FILE_EXCEEDS_LIMIT_MESSAGE,
+  OPEN_AI_AUDIO_LIMIT,
 } from "@/utils/constants";
 import {
   checkCompletionsRateLimits,
@@ -62,10 +64,12 @@ import { bot } from "@/lib/bot";
 import { INSUFFICEINT_IMAGE_GENERATIONS_MESSAGE } from "@/utils/constants";
 import { PdfBody } from "@/lib/pdf";
 import { ImageBody } from "@/lib/image";
-import { createCompletion, createEmbedding, createModeration, getPayload } from "@/lib/openai";
-import { estimateEmbeddingTokens, estimateTotalCompletionTokens } from "@/utils/tokenizer";
+import { createCompletion, createEmbedding, createModeration, createTranslation, getPayload } from "@/lib/openai";
+import { calculateWhisperTokens, estimateEmbeddingTokens, estimateTotalCompletionTokens } from "@/utils/tokenizer";
 import { CreateEmbeddingResponse } from "openai";
 import { backOff } from "exponential-backoff";
+import { createReadStream, unlinkSync, writeFileSync } from "fs";
+import { convertToWav , getFileSizeInMb} from "@/utils/convertToWav";
 
 const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
 
@@ -216,11 +220,119 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
 
     console.log(`Callback data: `, data);
 
+    if ( data !== "Basic Plan" ||
+      data !== "Pro Plan" ||
+      data !== "Business Plan") {
+        ctx.reply(PROCESSING_BACKGROUND_MESSAGE, {
+          reply_to_message_id: messageId,
+        });
+      }
+
+    if (message.voice) {
+      // convert audio to text and send to question completion, then delete audio
+       // Acquire a lock on the user resource
+      const key = `user:${userId}`;
+      const userLockResource = `locks:user:token:${userId}`;
+            const {duration, file_id} = message.voice;
+      try {
+        let lock = await redlock.acquire([userLockResource], 2 * 60 * 1000);
+        let localFilePath = "";
+        let wavFilePath = "";
+
+        try {
+        
+      const totalTokens = parseInt((await hget(key, "tokens")) || "0");
+      const tokensToProcessAudio = calculateWhisperTokens(duration);
+
+      if (totalTokens < tokensToProcessAudio) {
+        ctx.reply(INSUFFICIENT_TOKENS_MESSAGE, {
+          reply_to_message_id: messageId,
+        });
+        return;
+      }
+      
+    const fileLink = await ctx.telegram.getFileLink(file_id);
+
+    const response = await fetch(fileLink);
+    const arrayBuffer = await response.arrayBuffer();
+    const fileBuffer = Buffer.from(arrayBuffer);
+
+    localFilePath = `${file_id}.oga`;
+    writeFileSync(localFilePath, fileBuffer);
+
+    wavFilePath = `${file_id}.wav`;
+    await convertToWav(localFilePath, wavFilePath);
+    const fileSizeInMb = getFileSizeInMb(wavFilePath);
+
+    if (fileSizeInMb > OPEN_AI_AUDIO_LIMIT) {
+      ctx.reply(AUIDO_FILE_EXCEEDS_LIMIT_MESSAGE, {
+        reply_to_message_id: messageId,
+      });
+      return;
+    }
+
+    const translationResponse = await createTranslation(createReadStream(wavFilePath));
+    
+    if (!translationResponse) {
+      ctx.reply(INTERNAL_SERVER_ERROR_MESSAGE, {
+        reply_to_message_id: messageId,
+      });
+      return;
+    }
+                                  // #TODO: Update in DB
+      // process audio updated token
+       const newTokenCountTotal = totalTokens - tokensToProcessAudio;
+
+        // Update the user's token count in Supabase
+      const updateUserTokensDB = await updateUserTokens(userId, newTokenCountTotal);
+      if (!updateUserTokensDB) {
+        console.error(`Unable to update user's token count in the database`);
+        ctx.reply(INTERNAL_SERVER_ERROR_MESSAGE, {
+          reply_to_message_id: messageId,
+        });
+      }
+
+  const redisMulti = getRedisClient().multi(); // Start a transaction
+  redisMulti.hset(key, {
+    tokens: newTokenCountTotal > 0 ? newTokenCountTotal : 0,
+  });
+  await redisMulti.exec(); 
+
+    const { text: question } = translationResponse;
+    console.log(`Question: `, question);
+
+    message.text = question;
+    } catch (err) {
+      console.error(err);
+      ctx.reply(INTERNAL_SERVER_ERROR_MESSAGE, {
+        reply_to_message_id: messageId,
+      });
+      return;
+    } finally {
+      // Release the lock
+      await lock.release();
+      if (localFilePath) {
+        unlinkSync(localFilePath);
+      }
+      if (wavFilePath) {
+        unlinkSync(wavFilePath);
+      }
+    }
+    } catch (err) {
+      console.error(err);
+      ctx.reply(INTERNAL_SERVER_ERROR_MESSAGE, {
+        reply_to_message_id: messageId,
+      });
+      return;
+    }
+    }
+
+    // check for rate limits for image generations and and that the amount left is greater than 0
     if (
       data == "Room" ||
       data == "Restore" ||
       data == "Scribble" ||
-      data == "Imagine"
+      data == "Imagine" 
     ) {
       if ((userData.image_generations_remaining as number) <= 0) {
         ctx.reply(INSUFFICEINT_IMAGE_GENERATIONS_MESSAGE, {
@@ -228,22 +340,55 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
         });
         return;
       }
+
+       const rateLimitResult = await imageGenerationRateLimit(userId);
+
+        if (!rateLimitResult.result.success) {
+          console.error("Rate limit exceeded");
+          ctx.reply(
+            getEmbeddingsRateLimitResponse(
+              rateLimitResult.hours,
+              rateLimitResult.minutes,
+              rateLimitResult.seconds
+            ),
+            {
+              reply_to_message_id: messageId,
+            }
+          );
+          return;
+        }
+      
     }
 
-    if (data == "General Question" || data == "PDF Question") {
+    // check for rate limits for completions and and that the amount left is greater than 0
+    if (data == "General Question" || data == "PDF Question" || data == "Voice") {
       if ((userData.tokens as number) <= 0) {
         ctx.reply(INSUFFICIENT_TOKENS_MESSAGE, {
           reply_to_message_id: messageId,
         });
         return;
       }
+
+       const rateLimitResult = await checkCompletionsRateLimits(userId);
+
+          if (!rateLimitResult.result.success) {
+            console.error("Rate limit exceeded");
+            ctx.reply(
+              getEmbeddingsRateLimitResponse(
+                rateLimitResult.hours,
+                rateLimitResult.minutes,
+                rateLimitResult.seconds
+              ),
+              {
+                reply_to_message_id: messageId,
+              }
+            );
+            return;
+          }
     }
 
     if (data == "Room" || data == "Restore" || data == "Scribble") {
       try {
-        ctx.reply(PROCESSING_BACKGROUND_MESSAGE, {
-          reply_to_message_id: messageId,
-        });
 
         let fileId = "";
         if (message.document) {
@@ -290,9 +435,6 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
     } else if (data == "Imagine") {
       try {
         const { text } = message;
-        ctx.reply(PROCESSING_BACKGROUND_MESSAGE, {
-          reply_to_message_id: messageId,
-        });
 
         const body: ImageBody = {
           chatId: chatId,
@@ -329,27 +471,6 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
         let lock = await redlock.acquire([userLockResource], 5 * 60 * 1000);
 
         try {
-          const rateLimitResult = await checkCompletionsRateLimits(userId);
-
-          if (!rateLimitResult.result.success) {
-            console.error("Rate limit exceeded");
-            ctx.reply(
-              getEmbeddingsRateLimitResponse(
-                rateLimitResult.hours,
-                rateLimitResult.minutes,
-                rateLimitResult.seconds
-              ),
-              {
-                reply_to_message_id: messageId,
-              }
-            );
-            return;
-          }
-
-          ctx.reply(MESSAGE_ACCEPTANCE_MESSAGE, {
-            reply_to_message_id: messageId,
-          })
-
           const totalTokensRemaining = parseInt(
             (await hget(userKey, "tokens")) || "0"
           );
@@ -441,26 +562,6 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
         let lock = await redlock.acquire([userLockResource], 5 * 60 * 1000);
 
         try {
-          const rateLimitResult = await checkCompletionsRateLimits(userId);
-
-          if (!rateLimitResult.result.success) {
-            console.error("Rate limit exceeded");
-            ctx.reply(
-              getEmbeddingsRateLimitResponse(
-                rateLimitResult.hours,
-                rateLimitResult.minutes,
-                rateLimitResult.seconds
-              ),
-              {
-                reply_to_message_id: messageId,
-              }
-            );
-            return;
-          }
-
-          ctx.reply(MESSAGE_ACCEPTANCE_MESSAGE, {
-            reply_to_message_id: messageId,
-          })
 
           const totalTokensRemaining = parseInt(
             (await hget(userKey, "tokens")) || "0"
@@ -657,7 +758,8 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
       ctx.replyWithInvoice(invoiceParams, {
         reply_to_message_id: messageId,
       });
-    } else {
+    }  
+    else {
       ctx.reply(INVALID_COMMAND_MESSAGE, {
         reply_to_message_id: messageId,
       });
@@ -813,165 +915,6 @@ You have access to:
     });
   });
 
-  // bot.on("voice", async (ctx) => {
-  //   const messageId = ctx.message.message_id;
-
-  //   if (processing) {
-  //     ctx.reply("Please wait, I am still processing your last request", {
-  //       reply_to_message_id: messageId,
-  //     });
-  //     return;
-  //   }
-
-  //   const rateLimitResult = await checkCompletionsRateLimits(
-  //     ctx.message.from.id
-  //   );
-
-  //   if (!rateLimitResult.result.success) {
-  //     console.error("Rate limit exceeded");
-  //     ctx.reply(
-  //       "Too many requests, please try again in " +
-  //         rateLimitResult.hours +
-  //         " hours and " +
-  //         rateLimitResult.minutes +
-  //         " minutes"
-  //     );
-  //     return;
-  //   }
-
-  //   const fileId = ctx.update.message.voice.file_id;
-  //   const fileLink = await ctx.telegram.getFileLink(fileId);
-
-  //   const response = await fetch(fileLink);
-  //   const arrayBuffer = await response.arrayBuffer();
-  //   const fileBuffer = Buffer.from(arrayBuffer);
-
-  //   const localFilePath = `${fileId}.oga`;
-  //   writeFileSync(localFilePath, fileBuffer);
-
-  //   const wavFilePath = `${fileId}.wav`;
-  //   await convertToWav(localFilePath, wavFilePath);
-
-  //   try {
-  //     const openai = new OpenAIApi(configuration);
-  //     const resp = await openai.createTranslation(
-  //       createReadStream(wavFilePath) as any,
-  //       "whisper-1"
-  //     );
-  //     const { text: question } = resp.data;
-  //     const sanitizedQuestion = question.replace(/(\r\n|\n|\r)/gm, "");
-
-  //     const moderationReponse = await createModeration(sanitizedQuestion);
-  //     if (moderationReponse?.results?.[0]?.flagged) {
-  //       ctx.reply("Your question is not allowed per OpenAI's guidelines");
-  //       return;
-  //     }
-
-  //     ctx.sendChatAction("typing");
-
-  //     let embeddingResult: CreateEmbeddingResponse | undefined = undefined;
-  //     // Retry with exponential backoff in case of error. Typically, this is due to too_many_requests
-  //     embeddingResult = await backOff(
-  //       () => createEmbedding(sanitizedQuestion),
-  //       {
-  //         startingDelay: 1000,
-  //         numOfAttempts: 10,
-  //       }
-  //     );
-
-  //     const promptEmbedding = embeddingResult?.data?.[0]?.embedding;
-
-  //     if (!promptEmbedding) {
-  //       ctx.reply("Sorry, an error occured. Please try again later");
-  //       return;
-  //     }
-
-  //     const { data: documents, error } = await supabaseClient.rpc(
-  //       "match_documents",
-  //       {
-  //         query_embedding: promptEmbedding,
-  //         similarity_threshold: 0.1,
-  //         match_count: 10,
-  //       }
-  //     );
-
-  //     if (error) {
-  //       console.error(error);
-  //       ctx.reply("Sorry, an error occured. Please try again later");
-  //       return;
-  //     }
-
-  //     if (!documents || documents.length === 0) {
-  //       ctx.reply("Sorry, I could not find any matching documents");
-  //       return;
-  //     }
-
-  //     let tokenCount = 0;
-  //     let contextText = "";
-
-  //     // Concat matched documents
-  //     for (let i = 0; i < documents.length; i++) {
-  //       const document = documents[i];
-  //       const content = document.content;
-  //       const url = document.url;
-  //       tokenCount += document.token_count;
-
-  //       // Limit context to max 1500 tokens (configurable)
-  //       if (tokenCount > CONTEXT_TOKENS_CUTOFF) {
-  //         break;
-  //       }
-
-  //       contextText += `${content.trim()}\nSOURCE: ${url}\n---\n`;
-  //     }
-
-  //     const prompt = `\
-  //     You are a helpful assistant. When given CONTEXT you answer questions using only that information,
-  //     and you always format your output in markdown. You include code snippets if relevant. If you are unsure and the answer
-  //     is not explicitly written in the CONTEXT provided, you say
-  //     "Sorry, I don't know how to help with that." If the CONTEXT includes
-  //     source URLs include them under a SOURCES heading at the end of your response. Always include all of the relevant source urls
-  //     from the CONTEXT, but never list a URL more than once (ignore trailing forward slashes when comparing for uniqueness). Never include URLs that are not in the CONTEXT sections. Never make up URLs
-
-  // CONTEXT:
-  // ${contextText}
-
-  // QUESTION: """
-  // ${sanitizedQuestion}
-  // """`;
-
-  //     const payload = getPayload(prompt, "gpt-3.5-turbo");
-
-  //     const completion = await fetch(
-  //       "https://api.openai.com/v1/chat/completions",
-  //       {
-  //         headers: {
-  //           "Content-Type": "application/json",
-  //           Authorization: `Bearer ${process.env.OPENAI_API_KEY ?? ""}`,
-  //         },
-  //         method: "POST",
-  //         body: JSON.stringify(payload),
-  //       }
-  //     );
-
-  //     if (!completion.ok) {
-  //       console.error(completion);
-  //       ctx.reply("Sorry, an error occured. Please try again later");
-  //       return;
-  //     }
-
-  //     // get a json object from the response
-  //     const { choices } = await completion.json();
-  //     ctx.reply(choices[0].message.content, { reply_to_message_id: messageId });
-  //     processing = false;
-  //   } catch (err) {
-  //     console.error(err);
-  //     ctx.reply("Sorry, an error occured. Please try again later");
-  //   } finally {
-  //     unlinkSync(localFilePath);
-  //     unlinkSync(wavFilePath);
-  //   }
-  // });
-
   bot.on("message", async (ctx) => {
     const message = ctx.message as any;
     const fromId = message.from.id;
@@ -1009,7 +952,35 @@ You have access to:
           }),
         },
       });
-    }
+    } 
+
+    // processing the voice commands 
+    else if (message.voice) {
+      const { voice } = ctx.message as any;
+      const {file_size} = voice;
+      const maxFileSizeInBytes = OPEN_AI_AUDIO_LIMIT * 1024 * 1024;
+
+      if (file_size > maxFileSizeInBytes) {
+         ctx.reply(AUIDO_FILE_EXCEEDS_LIMIT_MESSAGE, {
+          reply_to_message_id: messageId,
+        });
+        return;
+      }
+
+      ctx.reply(TEXT_GENERATION_MESSAGE, {
+        reply_to_message_id: messageId,
+        reply_markup: {
+          inline_keyboard: TEXT_GENERATION_OPTIONS.map((e) => {
+            return [
+              {
+                text: e.title,
+                callback_data: e.title,
+              },
+            ];
+          }),
+        },
+      });
+    } 
 
     //  check if message is a successful payment
     else if (message.successful_payment) {
@@ -1114,23 +1085,6 @@ Learn more about your current limit at /limit. Thank you for choosing us, and we
 
     // check if message is a photo
     else if (message.photo) {
-      const rateLimitResult = await imageGenerationRateLimit(fromId);
-
-      if (!rateLimitResult.result.success) {
-        console.error("Rate limit exceeded");
-        ctx.reply(
-          getEmbeddingsRateLimitResponse(
-            rateLimitResult.hours,
-            rateLimitResult.minutes,
-            rateLimitResult.seconds
-          ),
-          {
-            reply_to_message_id: messageId,
-          }
-        );
-        return;
-      }
-
       ctx.reply(IMAGE_GENERATION_MESSAGE, {
         reply_to_message_id: messageId,
         reply_markup: {
@@ -1193,23 +1147,6 @@ Learn more about your current limit at /limit. Thank you for choosing us, and we
 
       // handle image files
       else if (mimeType === "image/png" || mimeType === "image/jpeg") {
-        const rateLimitResult = await imageGenerationRateLimit(fromId);
-
-        if (!rateLimitResult.result.success) {
-          console.error("Rate limit exceeded");
-          ctx.reply(
-            getEmbeddingsRateLimitResponse(
-              rateLimitResult.hours,
-              rateLimitResult.minutes,
-              rateLimitResult.seconds
-            ),
-            {
-              reply_to_message_id: messageId,
-            }
-          );
-          return;
-        }
-
         const sizeInMb = bytesToMegabytes(fileSize);
         if (sizeInMb > TELEGRAM_IMAGE_SIZE_LIMIT) {
           ctx.reply(IMAGE_SIZE_EXCEEDED_MESSAGE, {

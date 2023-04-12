@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { allowedIpRanges } from "./utils/constants";
+import { allowedIpRanges } from "@/utils/constants";
 import { inRange } from "range_check";
+import { ipRateLimit } from "@/lib/rate-limit";
 
 export const config = {
   matcher: [
@@ -20,22 +21,29 @@ export default async function middleware(req: NextRequest) {
   console.log(`Ip address: ${ip}`)
   console.log(`Url: ${url}`);
 
-   // check if the request is for upstash and if the signature is present
-  if (url && (url.includes("/api/qstash/"))) {
-    const signature = req.headers.get("upstash-signature");
-    if (signature) {
-      return NextResponse.next();
-    }
-  }
-
-  if (!ip || !inRange(ip, allowedIpRanges)) {
+   if (!ip || !inRange(ip, allowedIpRanges)) {
     return new NextResponse("Forbidden", { status: 404 });
   }
 
   // check if the request is for the api and if the secret key is correct
-  if (url && (url.includes("/api/tlg/"))) {
+  if (url && (url.includes("/api/tlg/")) || url.includes('/api/qstash/')) {
+   const rateLimitResult = await ipRateLimit(ip);
+
+    if (!rateLimitResult.result.success) {
+      return new NextResponse(
+        `⚠️ Rate Limit Exceeded ⚠️`,
+        { status: 429 }
+      );
+    }
+    
     const lastPart = url.split("/").pop();
+    const signature = req.headers.get("upstash-signature");
+
     if (lastPart == process.env.NEXT_SECRET_KEY) {
+      return NextResponse.next();
+    }
+
+    if (signature) {
       return NextResponse.next();
     }
   }

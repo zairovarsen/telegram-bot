@@ -1,6 +1,7 @@
 
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegPath from '@ffmpeg-installer/ffmpeg';
+import fs from 'fs'
 ffmpeg.setFfmpegPath(ffmpegPath.path);
 
 export const convertToWav = async (inputPath: string, outputPath: string): Promise<void> => {
@@ -17,4 +18,11 @@ export const convertToWav = async (inputPath: string, outputPath: string): Promi
           })
           .run();
       });
+}
+
+
+// Function to get the file size in MB
+export const getFileSizeInMb = (filePath: string): number => {
+  const fileSizeInBytes = fs.statSync(filePath).size;
+  return fileSizeInBytes / (1024 * 1024);
 }

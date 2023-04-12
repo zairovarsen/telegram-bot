@@ -1,4 +1,4 @@
-import { Configuration, CreateChatCompletionRequest, CreateChatCompletionResponse, CreateEmbeddingRequest, CreateEmbeddingResponse, CreateModerationRequest, CreateModerationResponse, OpenAIApi } from "openai";
+import { Configuration, CreateChatCompletionRequest, CreateChatCompletionResponse, CreateEmbeddingRequest, CreateEmbeddingResponse, CreateModerationRequest, CreateModerationResponse, OpenAIApi, CreateTranslationResponse } from "openai";
 import {
   createParser,
   ParsedEvent,
@@ -138,3 +138,14 @@ export const getPayload = (prompt: string, model: OpenAIModel, stream?: boolean)
   }
 };
 
+export const createTranslation = async (
+  file: any,
+): Promise<CreateTranslationResponse | null> => {
+  try {
+    const translation = await openai.createTranslation(file, "whisper-1");
+    return translation.data;
+  } catch (err) {
+    console.error(`OpenAI translation error: ${err}`)
+    return null;
+  }
+}
