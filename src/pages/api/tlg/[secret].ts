@@ -501,6 +501,7 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
             ctx.reply(INSUFFICIENT_TOKENS_MESSAGE, {
               reply_to_message_id: messageId,
             });
+            return;
           }
 
           await ctx.sendChatAction("typing");

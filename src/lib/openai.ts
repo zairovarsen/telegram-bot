@@ -54,8 +54,10 @@ export const createCompletion = async (
 ): Promise<CreateChatCompletionResponse | null> => {
   try {
     const completion = await openai.createChatCompletion(payload);
+    console.log(completion);
     return completion.data;
   } catch (err) {
+    console.log('Error asdasdasokdasodk')
     console.error(`OpenAI completion error: ${err}`)
     return null;
   }
