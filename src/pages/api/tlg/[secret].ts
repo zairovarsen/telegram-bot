@@ -90,8 +90,6 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
       return;
     }
 
-    console.log('Next middleware is called')
-
     let userId = null;
 
     if (ctx.message && ctx.message.from) {
@@ -118,7 +116,6 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
       return;
     }
 
-    console.log('Next middleware ended');
     await next();
   });
 
@@ -508,8 +505,10 @@ const tlg = async (req: NextApiRequest, res: NextApiResponse) => {
 
           await ctx.sendChatAction("typing");
 
+          console.log('Calling completion')
           const body = getPayload(sanitizedQuestion, "gpt-3.5-turbo");
           const completion = await createCompletion(body);
+          console.log(`Completion Returns: `)
           if (!completion) {
             console.error("Completion failed");
             ctx.reply(INTERNAL_SERVER_ERROR_MESSAGE, {
