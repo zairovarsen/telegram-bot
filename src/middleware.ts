@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { allowedIpRanges } from "@/utils/constants";
-import { inRange } from "range_check";
 import { ipRateLimit } from "@/lib/rate-limit";
 
 export const config = {
@@ -21,8 +19,8 @@ export default async function middleware(req: NextRequest) {
   console.log(`Ip address: ${ip}`)
   console.log(`Url: ${url}`);
 
-   if (!ip || !inRange(ip, allowedIpRanges)) {
-    return new NextResponse("Forbidden", { status: 404 });
+  if (!ip) {
+    return new NextResponse("Forbidden", { status: 403 });
   }
 
   // check if the request is for the api and if the secret key is correct

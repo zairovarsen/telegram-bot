@@ -345,12 +345,5 @@ export const PRICING_PLANS = [
   },
 ];
 
-export const allowedIpRanges = [
-  "91.108.4.0/22",
-  "91.108.56.0/22",
-  "149.154.160.0/20",
-  "149.154.164.0/22",
-];
-
 export const INITIAL_TOKEN_COUNT = 100000;
 export const INITIAL_IMAGE_GENERATION_COUNT = 5;

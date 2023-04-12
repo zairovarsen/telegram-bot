@@ -33,7 +33,6 @@
     "next": "13.2.4",
     "openai": "^3.2.1",
     "pdf-parse": "^1.1.1",
-    "range_check": "^2.0.4",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "stripe": "^11.17.0",
