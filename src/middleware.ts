@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ipRateLimit } from "@/lib/rate-limit";
 
 export const config = {
   matcher: [
@@ -7,11 +6,16 @@ export const config = {
   ],
 };
 
+// https://api.telegram.org/bot6265645703:AAHAahkwSKsmAkx5zUvlzfVQe9D_gwUbzFs/setWebhook?url=https://7bc1-78-109-154-5.ngrok.io/api/tlg/3953fe1a736753754aefa15db40c523e295864d7&drop_pending_updates=true&allowed_updates=["message"]&secret_token=3953fe1a736753754aefa15db40c523e295864d7
 
 export default async function middleware(req: NextRequest) {
   const { url } = req;
   let ip = req.ip ?? req.headers.get('x-real-ip')
   const forwardedFor = req.headers.get('x-forwarded-for')
+  const token = req.headers.get('X-Telegram-Bot-Api-Secret-Token')
+  const signature = req.headers.get("upstash-signature");
+
+
   if(!ip && forwardedFor){
     ip = forwardedFor.split(',').at(0) ?? 'Unknown'
   }
@@ -19,30 +23,15 @@ export default async function middleware(req: NextRequest) {
   console.log(`Ip address: ${ip}`)
   console.log(`Url: ${url}`);
 
-  if (!ip) {
-    return new NextResponse("Forbidden", { status: 403 });
-  }
-
   // check if the request is for the api and if the secret key is correct
   if (url && (url.includes("/api/tlg/")) || url.includes('/api/qstash/')) {
-   const rateLimitResult = await ipRateLimit(ip);
-
-    if (!rateLimitResult.result.success) {
-      return new NextResponse(
-        `⚠️ Rate Limit Exceeded ⚠️`,
-        { status: 429 }
-      );
-    }
-    
-    const lastPart = url.split("/").pop();
-    const signature = req.headers.get("upstash-signature");
-
-    if (lastPart == process.env.NEXT_SECRET_KEY) {
+    if (token == process.env.NEXT_SECRET_KEY) {
       return NextResponse.next();
     }
-
-    if (signature) {
+    else if (signature) {
       return NextResponse.next();
+    } else {
+      return new NextResponse("Forbidden", { status: 403 });
     }
   }
 

@@ -108,27 +108,27 @@ export const pdfGenerationRateLimit = async (userId: number) => {
 };
 
 // IP rate limit, 30 requests per minute
-export const ipRateLimit = async (ip: string) => {
-  const rateLimit = new Ratelimit({
-    redis: getRedisClient(),
-    limiter: Ratelimit.fixedWindow(30, "1 m"),
-    analytics: true,
-  });
+// export const ipRateLimit = async (ip: string) => {
+//   const rateLimit = new Ratelimit({
+//     redis: getRedisClient(),
+//     limiter: Ratelimit.fixedWindow(30, "1 m"),
+//     analytics: true,
+//   });
 
-  const result = await rateLimit.limit(
-    ip
-  );
-  // Calcualte the remaining time until generations are reset
-  const diff = Math.abs(
-    new Date(result.reset).getTime() - new Date().getTime()
-  );
+//   const result = await rateLimit.limit(
+//     ip
+//   );
+//   // Calcualte the remaining time until generations are reset
+//   const diff = Math.abs(
+//     new Date(result.reset).getTime() - new Date().getTime()
+//   );
 
-  const hours = Math.floor(diff / 1000 / 60 / 60);
-  const minutes = Math.floor(diff / 1000 / 60) - hours * 60;
-  const seconds = Math.floor(diff / 1000) - hours * 60 * 60 - minutes * 60;
+//   const hours = Math.floor(diff / 1000 / 60 / 60);
+//   const minutes = Math.floor(diff / 1000 / 60) - hours * 60;
+//   const seconds = Math.floor(diff / 1000) - hours * 60 * 60 - minutes * 60;
 
-  return { result, hours, minutes, seconds };
-};
+//   return { result, hours, minutes, seconds };
+// };
 
 export const getEmbeddingsRateLimitResponse = (
   hours: number,

@@ -12,8 +12,8 @@ import { getRedisClient, hget, lock } from "@/lib/redis";
 import { InsertDocuments, checkUserFileHashExist, createDocumentsBatch, updateUserTokens, uploadFileToSupabaseStorage } from "@/lib/supabase";
 import { createEmbedding } from "@/lib/openai";
 import { backOff } from "exponential-backoff";
-import crypto from "crypto";
 import { tokenizer } from "@/utils/tokenizer";
+
 
 
 export type PdfBody = {
@@ -62,16 +62,27 @@ const updateUserTokenCountRedis = async (
 };
 
 
+async function sha256Polyfill(buffer:Buffer) {
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    // Use Web Crypto API if available
+     // Use Web Crypto API if available
+    const dataUint8Array = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', dataUint8Array);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return hashHex;
+  }
+  return ""
+}
+
 /**
  * Calculate the SHA256 hash of a file for avoiding file deduplication
  * 
  * @param fileContent 
  * @returns 
  */
-const calculateSha256 = (fileContent: Buffer): string => {
-  const hash = crypto.createHash("sha256");
-  hash.update(fileContent);
-  return hash.digest("hex");
+const calculateSha256 = async (fileContent: Buffer): Promise<string> => {
+  return await sha256Polyfill(fileContent) as string;
 }
 
 /**
@@ -92,8 +103,8 @@ const generateDocuments = async (
     const response = await fetch(pdfPath);
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    
-    const sha256 = calculateSha256(buffer);
+
+    const sha256 = await calculateSha256(buffer);
 
     const fileExist = await checkUserFileHashExist(userId, sha256);
 

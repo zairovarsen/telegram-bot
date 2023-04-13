@@ -1,9 +1,4 @@
 import { Configuration, CreateChatCompletionRequest, CreateChatCompletionResponse, CreateEmbeddingRequest, CreateEmbeddingResponse, CreateModerationRequest, CreateModerationResponse, OpenAIApi, CreateTranslationResponse } from "openai";
-import {
-  createParser,
-  ParsedEvent,
-  ReconnectInterval,
-} from "eventsource-parser";
 import { MAX_TOKENS_COMPLETION } from "@/utils/constants";
 
 const configuration = new Configuration({

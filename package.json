@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "gen": "npx supabase gen types typescript --project-id \"osvtgvfbqnfwkwhrdmek\" --schema public > ./src/types/supabase.ts"
+    "gen": "npx supabase gen types typescript --project-id \"tmlzjdplxtmfsyyfcanv\" --schema public > ./src/types/supabase.ts"
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
@@ -32,12 +32,13 @@
     "nanoid": "^4.0.1",
     "next": "13.2.4",
     "openai": "^3.2.1",
+    "path": "^0.12.7",
     "pdf-parse": "^1.1.1",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "stripe": "^11.17.0",
-    "telegraf": "^4.12.2",
-    "typescript": "5.0.2"
+    "typescript": "5.0.2",
+    "util.promisify": "^1.1.1"
   },
   "devDependencies": {
     "@types/ffmpeg": "^1.0.4",
