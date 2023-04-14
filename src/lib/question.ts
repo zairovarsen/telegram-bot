@@ -1,11 +1,10 @@
 import { TelegramBot } from "@/types";
 import { getRedisClient, hget, lock } from "@/lib/redis";
-import { createCompletion, createModeration, getPayload } from "@/lib/openai";
+import { createCompletion, createCompletionStream, createModeration, getPayload } from "@/lib/openai";
 import { INSUFFICIENT_TOKENS_MESSAGE, INTERNAL_SERVER_ERROR_MESSAGE, MODERATION_ERROR_MESSAGE, UNANSWERED_QUESTION_MESSAGE } from "@/utils/constants";
-import { sendMessage } from "./bot";
+import { editMessageText, sendChatAction, sendMessage } from "@/lib/bot";
 import { estimateTotalCompletionTokens } from "@/utils/tokenizer";
 import { updateUserTokens } from "@/lib/supabase";
-
 
 /**
  * Process general question using OpenAI completion API
@@ -54,8 +53,7 @@ export const processGeneralQuestion = async (text: string, message: TelegramBot.
             return;
           }
 
-        //   await ctx.sendChatAction("typing");
-
+          await sendChatAction(message.chat.id, "typing");
           const body = getPayload(sanitizedQuestion, "gpt-3.5-turbo");
           const completion = await createCompletion(body);
           if (!completion) {

@@ -128,11 +128,13 @@ export interface Database {
       distinct_user_file_hashes: {
         Row: {
           hash: string | null
+          user_id: number | null
         }
       }
       distinct_user_file_url: {
         Row: {
           url: string | null
+          user_id: number | null
         }
       }
     }

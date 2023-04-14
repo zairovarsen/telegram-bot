@@ -13,6 +13,7 @@ import { InsertDocuments, checkUserFileHashExist, createDocumentsBatch, updateUs
 import { createEmbedding } from "@/lib/openai";
 import { backOff } from "exponential-backoff";
 import { tokenizer } from "@/utils/tokenizer";
+import { sha256 } from "hash-wasm";
 
 
 
@@ -62,19 +63,6 @@ const updateUserTokenCountRedis = async (
 };
 
 
-async function sha256Polyfill(buffer:Buffer) {
-  if (typeof crypto !== 'undefined' && crypto.subtle) {
-    // Use Web Crypto API if available
-     // Use Web Crypto API if available
-    const dataUint8Array = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', dataUint8Array);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    return hashHex;
-  }
-  return ""
-}
-
 /**
  * Calculate the SHA256 hash of a file for avoiding file deduplication
  * 
@@ -82,7 +70,7 @@ async function sha256Polyfill(buffer:Buffer) {
  * @returns 
  */
 const calculateSha256 = async (fileContent: Buffer): Promise<string> => {
-  return await sha256Polyfill(fileContent) as string;
+  return await sha256(fileContent); 
 }
 
 /**
@@ -116,16 +104,16 @@ const generateDocuments = async (
     }
 
     const data = await pdfParse(buffer);
-    const fileUploadUrl = await uploadFileToSupabaseStorage(buffer);    
+    // const fileUploadUrl = await uploadFileToSupabaseStorage(buffer);    
 
-    if (!fileUploadUrl) {
-      return {
-        success: false,
-        errorMessage: UNABLE_TO_PROCESS_PDF_MESSAGE,
-      }
-    };
+    // if (!fileUploadUrl) {
+    //   return {
+    //     success: false,
+    //     errorMessage: UNABLE_TO_PROCESS_PDF_MESSAGE,
+    //   }
+    // };
 
-    console.log(`File upload URL: ${fileUploadUrl}`);
+    // console.log(`File upload URL: ${fileUploadUrl}`);
 
     const lines = data.text
       .split("\n")
@@ -155,7 +143,7 @@ const generateDocuments = async (
         };
       }
 
-      documents.push({ url: fileUploadUrl, body: chunk, hash: sha256 });
+      documents.push({ url: pdfPath, body: chunk, hash: sha256 });
       start = end;
     }
 

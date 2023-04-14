@@ -9,7 +9,7 @@ interface Client {
 
 const client: Client = {
   url: process.env.NEXT_PUBLIC_SUPABASE_URL,
-  key: process.env.SUPABASE_ANON_KEY,
+  key: process.env.SUPABASE_SERVICE_ROLE
 };
 
 if (!client.url || !client.key) {
@@ -215,7 +215,7 @@ export const createDocumentsBatch = async (
   try {
     const { error } = await supabaseClient.from("documents").insert(body);
     if (error) {
-      console.error(`Error while creating documents batch: ${error}`);
+      console.error(`Error while creating documents batch: ${JSON.stringify(error)} `);
       return false;
     } else {
       return true;
@@ -237,7 +237,7 @@ export const createDocumentsSingle = async (
   try {
     const { error } = await supabaseClient.from("documents").insert([body]);
     if (error) {
-      console.error(`Error while creating documents single: ${error}`);
+      console.error(`Error while creating documents single: ${JSON.stringify(error)}`);
       return false;
     } else {
       return true;

@@ -1,5 +1,6 @@
 import { Configuration, CreateChatCompletionRequest, CreateChatCompletionResponse, CreateEmbeddingRequest, CreateEmbeddingResponse, CreateModerationRequest, CreateModerationResponse, OpenAIApi, CreateTranslationResponse } from "openai";
 import { MAX_TOKENS_COMPLETION } from "@/utils/constants";
+import { ParsedEvent, ReconnectInterval, createParser } from "eventsource-parser";
 
 const configuration = new Configuration({
   apiKey: process.env.OPENAI_API_KEY,
@@ -87,49 +88,64 @@ export const createCompletion = async (
  * @param onChunk The callback to call when a chunk is received
  * @returns The completion stream response
  */
-export const generateCompletion = async (
+export const createCompletionStream = async (
   payload: CreateChatCompletionRequest,
-  onChunk: (chunk: string) => void
-): Promise<CreateChatCompletionResponse | null> => {
-  return new Promise(async (resolve, reject) => {
-    try {
-      const res = (await openai.createChatCompletion(payload, { responseType: 'stream' })) as any;
+  onChunk: (chunk: string) => void): Promise<ReadableStream | null> => {
 
-      res.data.on('data', (data:Buffer) => {
-        const lines = data.toString().split('\n').filter(line => line.trim() !== '');
-        for (const line of lines) {
-          const message = line.replace(/^data: /, '');
-          if (message === '[DONE]') {
-            resolve(null);
-            return; // Stream finished
+   const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+
+  let counter = 0;
+
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY ?? ""}`,
+    },
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+    const stream = new ReadableStream({
+    async start(controller) {
+      // callback
+      function onParse(event: ParsedEvent | ReconnectInterval) {
+        if (event.type === "event") {
+          const data = event.data;
+          // https://beta.openai.com/docs/api-reference/completions/create#completions/create-stream
+          if (data === "[DONE]") {
+            controller.close();
+            return;
           }
           try {
-            const parsed = JSON.parse(message);
-            const chunk = parsed.choices[0].delta?.content || "";
-            onChunk(chunk);
-          } catch (error) {
-            console.error('Could not JSON parse stream message', message, error);
+            const json = JSON.parse(data);
+            const text = json.choices[0].delta?.content || "";
+            if (counter < 2 && (text.match(/\n/) || []).length) {
+              // this is a prefix character (i.e., "\n\n"), do nothing
+              return;
+            }
+            onChunk(text);
+            const queue = encoder.encode(text);
+            controller.enqueue(queue);
+            counter++;
+          } catch (e) {
+            // maybe parse error
+            controller.error(e);
           }
         }
-      });
-    } catch (error: any) {
-      if (error.response?.status) {
-        console.error(error.response.status, error.message);
-        error.response.data.on('data', (data:any) => {
-          const message = data.toString();
-          try {
-            const parsed = JSON.parse(message);
-            console.error('An error occurred during OpenAI request: ', parsed);
-          } catch (error) {
-            console.error('An error occurred during OpenAI request: ', message);
-          }
-        });
-      } else {
-        console.error('An error occurred during OpenAI request', error);
       }
-      reject(error);
-    }
+
+      // stream response (SSE) from OpenAI may be fragmented into multiple chunks
+      // this ensures we properly read chunks and invoke an event for each SSE event stream
+      const parser = createParser(onParse);
+      // https://web.dev/streams/#asynchronous-iteration
+      for await (const chunk of res.body as any) {
+        parser.feed(decoder.decode(chunk));
+      }
+    },
   });
+
+  return stream;
 }
 
 /**

@@ -81,8 +81,6 @@ export const config = {
 const tlg = async (req:any, res:any) => {
 
 
-
-
 const handleUpdate = async (update: TelegramBot.CustomUpdate) => {
 
   const preprocessing = await middleware(update);
@@ -92,12 +90,14 @@ const handleUpdate = async (update: TelegramBot.CustomUpdate) => {
 
   if (update.message) {
     const { message } = update;
+    const { from, chat, message_id} = message;
+    if (!from) return;
+    const { id: userId } = from;
+    const {id: chatId} = chat;
 
     // deals with text messages
     if (message.text) {
-      const { text, message_id, chat, from} = message;
-      if (!from) return;
-      const { id: chatId } = chat;
+      const { text} = message;
 
       const rateLimitResult = await checkUserRateLimit(from.id);
   // rate limit exceeded
@@ -147,7 +147,80 @@ const handleUpdate = async (update: TelegramBot.CustomUpdate) => {
 
     }
     }
-    }
+    } else if (message.document) {
+      const mimeType = message.document.mime_type;
+      const fileId = message.document.file_id;
+      const fileSize = message.document.file_size;
+
+      if (!fileSize) return;
+
+      // handle pdf files
+      if (mimeType === "application/pdf") {
+        try {
+          const sizeInMb = bytesToMegabytes(fileSize);
+          if (sizeInMb > TELEGRAM_FILE_SIZE_LIMIT) {
+            await sendMessage(chatId,FILE_SIZE_EXCEEDED_MESSAGE, {
+              reply_to_message_id: message_id,
+            });
+            return;
+          }
+          await sendMessage(chatId, PROCESSING_BACKGROUND_MESSAGE, {
+            reply_to_message_id: message_id,
+          });
+
+          const body: PdfBody = {
+            chatId: chatId,
+            messageId: message_id,
+            fileId,
+            userId
+          };
+
+          const qStashPublishResponse = await qStash.publishJSON({
+            url: `${process.env.QSTASH_URL}/embeddings` as string,
+            body,
+          });
+          if (!qStashPublishResponse || !qStashPublishResponse.messageId) {
+            await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
+              reply_to_message_id: message_id,
+            });
+          }
+          console.log(`QStash Response: ${qStashPublishResponse.messageId}`);
+        } catch (err) {
+          console.error(err);
+          await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
+            reply_to_message_id: message_id,
+          });
+        }
+      }
+
+      // handle image files
+      // else if (mimeType === "image/png" || mimeType === "image/jpeg") {
+      //   const sizeInMb = bytesToMegabytes(fileSize);
+      //   if (sizeInMb > TELEGRAM_IMAGE_SIZE_LIMIT) {
+      //     ctx.reply(IMAGE_SIZE_EXCEEDED_MESSAGE, {
+      //       reply_to_message_id: messageId,
+      //     });
+      //     return;
+      //   }
+
+      //   ctx.reply(IMAGE_GENERATION_MESSAGE, {
+      //     reply_to_message_id: messageId,
+      //     reply_markup: {
+      //       inline_keyboard: IMAGE_GENERATION_OPTIONS.map((e) => {
+      //         return [
+      //           {
+      //             text: e.title,
+      //             callback_data: e.title,
+      //           },
+      //         ];
+      //       }),
+      //     },
+      //   });
+      // } else {
+      //   ctx.reply(INVALID_FILE_MESSAGE, {
+      //     reply_to_message_id: messageId,
+      //   });
+      // }
 
     }
 
@@ -172,11 +245,19 @@ const handleUpdate = async (update: TelegramBot.CustomUpdate) => {
       return;
       } 
 
+      if (data !== 'Basic Plan' && data !== 'Pro Plan' && data !== 'Business Plan') {
+          await sendMessage(message.chat.id ,PROCESSING_BACKGROUND_MESSAGE, {
+          reply_to_message_id: message.reply_to_message.message_id,
+          });
+      }
+        
+
       if (data == 'General Question') {
         await processGeneralQuestion(text, message?.reply_to_message, from.id)
-      }
+      } 
     }
   }
+}
   
 
 
@@ -1345,7 +1426,6 @@ const handleUpdate = async (update: TelegramBot.CustomUpdate) => {
   }
 
 };
-
 
 
 

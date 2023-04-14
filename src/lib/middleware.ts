@@ -47,8 +47,9 @@ export const isNonNullUser = (user: TelegramBot.User | null): user is TelegramBo
 
 
 
-async function getUserData(key: string): Promise<UserInfoCache> {
+async function getUserData(key: string): Promise<UserInfoCache | null> {
   const data = await hgetAll(key);
+  if (!data) return null;
 
   const tempUserData = data as unknown as { tokens: string, image_generations_remaining: string };
 
