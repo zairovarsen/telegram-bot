@@ -224,7 +224,6 @@ export const processPdfQuestion = async (
         console.error(`Embedding creation error: `, error);
       }
 
-      console.log(`Embedding result: ${JSON.stringify(embeddingResult)}`);
       const totalTokensUsedForEmbeddingsRequest =
         embeddingResult?.usage?.total_tokens || 0;
       const promptEmbedding = embeddingResult?.data?.[0]?.embedding;

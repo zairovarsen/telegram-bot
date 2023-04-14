@@ -231,7 +231,6 @@ export async function processPdf(
 
           embeddingsTokenCount += embeddingResult?.usage?.total_tokens ?? 0;
           console.log(`Embedding token count: ${embeddingsTokenCount}`);
-          console.log(`Embedding: ${embeddingResult?.data[0].embedding}`);
 
           // Store the emedding in Supabase db.
           embeddingsData.push({
