@@ -13,8 +13,9 @@ import { createEmbedding } from "@/lib/openai";
 import { backOff } from "exponential-backoff";
 import { tokenizer } from "@/utils/tokenizer";
 import { sha256 } from "hash-wasm";
+import pdfParse from "pdf-parse";
 
-// import { getDocument } from "pdfjs-dist";
+import { performance } from 'perf_hooks';
 
 
 export type PdfBody = {
@@ -91,22 +92,22 @@ const generateDocuments = async (
     const response = await fetch(pdfPath);
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-
-    // const file = getDocument(arrayBuffer);
-    // console.log(file);    
-
+ 
     const sha256 = await calculateSha256(buffer);
 
     const fileExist = await checkUserFileHashExist(userId, sha256);
 
-    // if (fileExist) {
+    if (fileExist) {
       return {
         success: false,
         errorMessage: DUPLICATE_FILE_UPLOAD_MESSAGE,
       }
-    // }
+    }
 
     const data = await pdfParse(buffer);
+
+    console.log(`Number of pages: ${data.numpages}`);
+    
     // const fileUploadUrl = await uploadFileToSupabaseStorage(buffer);    
 
     // if (!fileUploadUrl) {
@@ -124,8 +125,10 @@ const generateDocuments = async (
       .join("");
     let start = 0;
     let remainingTokens = totalTokens;
-
+    console.log(`Number of lines: ${lines.length}`)
+     
     while (start < lines.length) {
+
       const end = start + DOC_SIZE;
       const chunk = lines.slice(start, end).replace(/\n/g, " ");
 
@@ -198,6 +201,8 @@ export async function processPdf(
         };
       }
 
+              const startTime = performance.now();
+
       // Generates the document in chunks of 1500 , also checks if the total tokens are sufficient to generate embeddings
       const documents = await generateDocuments(userId,pdfPath, totalTokens);
       if (!documents.success) {
@@ -207,6 +212,11 @@ export async function processPdf(
         };
       }
 
+         const endTime = performance.now();
+        const elapsedTime = endTime - startTime;
+        console.log(`Elapsed time: to generateDocuments ${elapsedTime} ms`);
+
+
       if (!documents.documents || documents.documents.length === 0) {
         return {
           success: false,
@@ -214,6 +224,7 @@ export async function processPdf(
         };
       }
 
+                    const startTime2 = performance.now();
       for (const { url, body, hash } of documents.documents) {
         const input = body.replace(/\n/g, " ");
 
@@ -253,6 +264,9 @@ export async function processPdf(
           );
         }
       }
+      const endTime2 = performance.now();
+      const elapsedTime2 = endTime2 - startTime2;
+      console.log(`Elapsed time: to generate Embedding from Documents ${elapsedTime2} ms`);
 
       if (embeddingsData.length === 0) {
         return {
@@ -270,6 +284,7 @@ export async function processPdf(
         newTokenCountTotal = 0;
       }
 
+                          const startTime3 = performance.now();
       // Save the embeddings in the database
       const createDocumentsResponseBatch = await createDocumentsBatch(
         embeddingsData
@@ -303,6 +318,10 @@ export async function processPdf(
       }
 
       await updateUserTokenCountRedis(userId, newTokenCountTotal);
+
+      const endTime3 = performance.now();
+      const elapsedTime3 = endTime3 - startTime3;
+      console.log(`Elapsed time: to createdocument in db , update token count in db and update redis, ${elapsedTime3} ms`);
 
       // return the new token count
       return { success: true, tokenCount: newTokenCountTotal };

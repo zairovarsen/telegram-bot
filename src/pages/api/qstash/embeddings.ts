@@ -10,6 +10,9 @@ import {
 } from "@/utils/constants";
 import { PdfBody, processPdf } from "@/lib/pdf";
 
+import { performance } from 'perf_hooks';
+
+
 export interface VerifyRequest extends NextApiRequest {
   signature: string;
 }
@@ -20,6 +23,8 @@ export async function handler(
 ) {
   const signature = (req.headers["upstash-signature"] || "") as string;
   const body = req.body;
+  const startTime = performance.now();
+
 
   if (!signature) {
     console.error("Received event from unauthorized source");
@@ -49,13 +54,16 @@ export async function handler(
       } else {
         message = UNABLE_TO_PROCESS_PDF_MESSAGE;
       }
-
       await sendMessage(chatId, message, {
         reply_to_message_id: messageId,
       });
       res.status(200).send("OK");
       return;
     }
+
+    const endTime = performance.now();
+const elapsedTime = endTime - startTime;
+console.log(`Elapsed time: ${elapsedTime} ms`);
 
     console.log(`Remaining tokens: ${embeddingsResult.tokenCount}`);
     await sendMessage(chatId, PDF_PROCESSING_SUCCESS_MESSAGE , {
@@ -72,8 +80,6 @@ export const config = {
   api: {
     bodyParser: false,
   },
-  runtime: "edge",
-  regions: ["fra1"], 
 };
 
 export default verifySignature(handler, {
