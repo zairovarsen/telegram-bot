@@ -24,6 +24,7 @@ export enum ConversionModel {
 }
 
 
+
 export type ConversionModelAllButOpenJourney = Exclude<ConversionModel, ConversionModel.OPENJOURNEY>;
 
 export declare namespace TelegramBot {
@@ -427,6 +428,13 @@ export declare namespace TelegramBot {
         my_chat_member?: ChatMemberUpdated | undefined;
         chat_member?: ChatMemberUpdated | undefined;
         chat_join_request?: ChatJoinRequest | undefined;
+    }
+
+    interface CustomUpdate extends Update {
+        userData?: {
+            tokens: number,
+            image_generations_remaining: number,
+        }
     }
 
     interface WebhookInfo {

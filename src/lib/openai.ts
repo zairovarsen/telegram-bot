@@ -17,9 +17,16 @@ export type OpenAIModel = 'gpt-4' | 'gpt-3.5-turbo' | 'text-davinci-003';
  */
 export const createModeration = async ({input}: CreateModerationRequest): Promise<CreateModerationResponse | null> => {
   try {
-    const moderation = await openai.createModeration({input})
-    return moderation.data;
+    return await fetch('https://api.openai.com/v1/moderations', {
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY!}`,
+    },
+    method: 'POST',
+    body: JSON.stringify({ input }),
+  }).then((r) => r.json());
   } catch (err) {
+    console.error(`OpenAI moderation error: ${err}`)
     return null;
   }
 };
@@ -36,8 +43,17 @@ export const createEmbedding = async (
 ): Promise<CreateEmbeddingResponse | null> => {
 
   try { 
-    const embedding = await openai.createEmbedding({input, model})
-    return embedding.data;
+    return await fetch('https://api.openai.com/v1/embeddings', {
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY!}`,
+    },
+    method: 'POST',
+    body: JSON.stringify({
+      model: model,
+      input: input,
+    }),
+  }).then((r) => r.json());
   } catch (err) {
     console.error(`OpenAI embedding error: ${err}`)
     return null;
@@ -48,9 +64,16 @@ export const createCompletion = async (
   payload: CreateChatCompletionRequest
 ): Promise<CreateChatCompletionResponse | null> => {
   try {
-    console.log('Calling completion if not vercel sucks')
-    const completion = await openai.createChatCompletion(payload);
-    return completion.data;
+    return await fetch('https://api.openai.com/v1/chat/completions', {
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY!}`,
+    },
+    method: 'POST',
+    body: JSON.stringify({
+      ...payload
+    }),
+  }).then((r) => r.json());
   } catch (err) {
     console.error(`OpenAI completion error: ${err}`)
     return null;

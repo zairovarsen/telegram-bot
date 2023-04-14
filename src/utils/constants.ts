@@ -347,3 +347,5 @@ export const PRICING_PLANS = [
 
 export const INITIAL_TOKEN_COUNT = 100000;
 export const INITIAL_IMAGE_GENERATION_COUNT = 5;
+
+export const AllowedTelegramUsers = [1021173367]

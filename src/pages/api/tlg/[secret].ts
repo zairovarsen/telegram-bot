@@ -69,6 +69,8 @@ import { backOff } from "exponential-backoff";
 import { createReadStream, unlinkSync, writeFileSync } from "fs";
 import { convertToWav , getFileSizeInMb} from "@/utils/convertToWav";
 import { sendMessage } from '@/lib/bot';
+import {  middleware} from "@/lib/middleware";
+import { processGeneralQuestion } from "@/lib/question";
 
 
 export const config = {
@@ -81,34 +83,55 @@ const tlg = async (req:any, res:any) => {
 
 
 
-const handleUpdate = async (update: TelegramBot.Update) => {
-  
+const handleUpdate = async (update: TelegramBot.CustomUpdate) => {
+
+  const preprocessing = await middleware(update);
+  console.log(`preprocessing: ${preprocessing}`)
+  if (!preprocessing) return;
+
+
   if (update.message) {
     const { message } = update;
 
+    // deals with text messages
     if (message.text) {
-      const { text, chat, message_id} = message;
-      const { id } = chat;
+      const { text, message_id, chat, from} = message;
+      if (!from) return;
+      const { id: chatId } = chat;
 
+      const rateLimitResult = await checkUserRateLimit(from.id);
+  // rate limit exceeded
+    if (!rateLimitResult.result.success) {
+      console.error("Rate limit exceeded");
+      await sendMessage(
+        chat.id,
+        getEmbeddingsRateLimitResponse(
+          rateLimitResult.hours,
+          rateLimitResult.minutes
+        )
+      );
+      return;
+    } 
+ 
        if (text == '/start') {
-          await sendMessage(id, WELCOME_MESSAGE)
+          await sendMessage(chatId, WELCOME_MESSAGE)
        } else {
         if (text.length < MIN_PROMPT_LENGTH) {
-          await sendMessage(id, MIN_PROMPT_MESSAGE, {
+          await sendMessage(chatId, MIN_PROMPT_MESSAGE, {
             reply_to_message_id: message_id,
           })
           return;
         }
 
         else if (text.length > MAX_PROMPT_LENGTH) {
-          await sendMessage(id, MAX_PROMPT_MESSAGE, {
+          await sendMessage(chatId, MAX_PROMPT_MESSAGE, {
             reply_to_message_id: message_id,
           })
           return;
         }
         else {
 
-      await sendMessage(id, TEXT_GENERATION_MESSAGE, {
+      await sendMessage(chatId, TEXT_GENERATION_MESSAGE, {
         reply_to_message_id: message_id,
         reply_markup: {
           inline_keyboard: TEXT_GENERATION_OPTIONS.map((e) => {
@@ -127,11 +150,35 @@ const handleUpdate = async (update: TelegramBot.Update) => {
     }
 
     }
+
+    // deals with callback queries
+    else if (update.callback_query) {
+      const { callback_query } = update;
+      const { data, message, from} = callback_query;
+      if (!message || !message.reply_to_message || !message.reply_to_message.text) return;
+      const { text } = message.reply_to_message;
+
+      const rateLimitResult = await checkUserRateLimit(from.id);
+      // rate limit exceeded
+      if (!rateLimitResult.result.success) {
+      console.error("Rate limit exceeded");
+      await sendMessage(
+        message.chat.id,
+        getEmbeddingsRateLimitResponse(
+          rateLimitResult.hours,
+          rateLimitResult.minutes
+        )
+      );
+      return;
+      } 
+
+      if (data == 'General Question') {
+        await processGeneralQuestion(text, message?.reply_to_message, from.id)
+      }
+    }
   }
   
-  // if (text == '/start') {
-  //  await sendMessage(chat.)
-  // } 
+
 
 
 
