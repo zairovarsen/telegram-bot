@@ -1,4 +1,4 @@
-import { Document } from "@/types";
+import { Embedding } from "@/types";
 import pdfParse from "pdf-parse";
 import {
   DOC_SIZE,
@@ -34,7 +34,7 @@ export type EmbeddingResult = {
 
 type DocumentGenerationResult = {
   success: true;
-  documents: Document[];
+  documents: Embedding[];
 } | {
   success: false;
   errorMessage: string;
@@ -98,7 +98,7 @@ const generateDocuments = async (
   totalTokens: number
 ): Promise<DocumentGenerationResult> => {
   try {
-    const documents: Document[] = [];
+    const documents: Embedding[] = [];
 
     const response = await fetch(pdfPath);
     const arrayBuffer = await response.arrayBuffer();
