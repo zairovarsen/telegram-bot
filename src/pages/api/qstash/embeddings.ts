@@ -1,5 +1,5 @@
 // // Embeddings generation endpoint for QStash
-import * as Receiver from "@upstash/qstash/nextjs";
+import {verifySignature} from "@upstash/qstash/nextjs";
 import { NextApiRequest, NextApiResponse } from "next";
 import { getFile, sendMessage } from "@/lib/bot";
 import {
@@ -72,9 +72,11 @@ export const config = {
   api: {
     bodyParser: false,
   },
+  runtime: "edge",
+  regions: ["fra1"], 
 };
 
-export default Receiver.verifySignature(handler, {
+export default verifySignature(handler, {
    currentSigningKey: process.env.QSTASH_CURRENT_SIGNING_KEY as string,
   nextSigningKey: process.env.QSTASH_NEXT_SIGNING_KEY as string,
 });

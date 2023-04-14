@@ -4,7 +4,7 @@ const path = require('path');
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-    webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
+    webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack , nextRuntime}) => {
     config.resolve.alias['fluent-ffmpeg'] = path.join(
       __dirname,
       'node_modules',

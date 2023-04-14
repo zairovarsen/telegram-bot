@@ -1,5 +1,4 @@
 import { Embedding } from "@/types";
-import pdfParse from "pdf-parse";
 import {
   DOC_SIZE,
   DUPLICATE_FILE_UPLOAD_MESSAGE,
@@ -15,6 +14,7 @@ import { backOff } from "exponential-backoff";
 import { tokenizer } from "@/utils/tokenizer";
 import { sha256 } from "hash-wasm";
 
+// import { getDocument } from "pdfjs-dist";
 
 
 export type PdfBody = {
@@ -92,16 +92,19 @@ const generateDocuments = async (
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
+    // const file = getDocument(arrayBuffer);
+    // console.log(file);    
+
     const sha256 = await calculateSha256(buffer);
 
     const fileExist = await checkUserFileHashExist(userId, sha256);
 
-    if (fileExist) {
+    // if (fileExist) {
       return {
         success: false,
         errorMessage: DUPLICATE_FILE_UPLOAD_MESSAGE,
       }
-    }
+    // }
 
     const data = await pdfParse(buffer);
     // const fileUploadUrl = await uploadFileToSupabaseStorage(buffer);    
@@ -172,6 +175,7 @@ export async function processPdf(
   pdfPath: string,
   userId: number
 ): Promise<EmbeddingResult> {
+  console.log('processing file')
   const userLockResource = `locks:user:token:${userId}`;
   const key = `user:${userId}`;
   try {
