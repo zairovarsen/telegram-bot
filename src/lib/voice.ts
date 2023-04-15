@@ -10,6 +10,9 @@ import { AUIDO_FILE_EXCEEDS_LIMIT_MESSAGE, INSUFFICIENT_TOKENS_MESSAGE, INTERNAL
 import { createTranslation } from "@/lib/openai";
 import { updateUserTokens } from "@/lib/supabase";
 import { processGeneralQuestion, processPdfQuestion } from "@/lib/question";
+import fs from 'fs';
+import path from 'path';
+import os from 'os'
 
 export interface VoiceBody {
   message: TelegramBot.Message,
@@ -47,8 +50,6 @@ export const processVoice = async (
           const {duration, file_id} = message.voice as TelegramBot.Voice;
            try {
              let unlock = await lock(userLockResource);
-             let localFilePath = "";
-             let wavFilePath = "";
    
              try {
    
@@ -76,12 +77,14 @@ export const processVoice = async (
          const arrayBuffer = await response.arrayBuffer();
          const fileBuffer = Buffer.from(arrayBuffer);
    
-         localFilePath = `${file_id}.oga`;
-         writeFileSync(localFilePath, fileBuffer);
-   
-         wavFilePath = `${file_id}.wav`;
-         await convertToWav(localFilePath, wavFilePath);
-         const fileSizeInMb = getFileSizeInMb(wavFilePath);
+         const tempDir = os.tmpdir();
+         const tempFilePath = path.join(tempDir, `${file_id}.oga` );
+         fs.writeFileSync(tempFilePath, fileBuffer);
+
+         const tempDir2 = os.tmpdir();
+         const tempFilePath2 = path.join(tempDir2, `${file_id}.wav` );
+         await convertToWav(tempFilePath, tempFilePath2);
+         const fileSizeInMb = getFileSizeInMb(tempFilePath2);
    
          if (fileSizeInMb > OPEN_AI_AUDIO_LIMIT) {
            await sendMessage(chatId,AUIDO_FILE_EXCEEDS_LIMIT_MESSAGE, {
@@ -90,7 +93,7 @@ export const processVoice = async (
            return;
          }
    
-         const translationResponse = await createTranslation(createReadStream(wavFilePath));
+         const translationResponse = await createTranslation(createReadStream(tempFilePath2));
    
          if (!translationResponse) {
            await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
@@ -144,12 +147,6 @@ export const processVoice = async (
          } finally {
            // Release the lock
            await unlock();
-           if (localFilePath) {
-             unlinkSync(localFilePath);
-           }
-           if (wavFilePath) {
-             unlinkSync(wavFilePath);
-           }
          }
          } catch (err) {
            console.error(err);
