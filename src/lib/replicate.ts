@@ -175,7 +175,6 @@ export const getImageStatus = async (id: string): Promise<string> => {
     .then((r) => r.json())
     .then((finalResponse) => {
       const jsonFinalResponse = finalResponse;
-      console.log(jsonFinalResponse);
       if (jsonFinalResponse.status === "succeeded") {
         if (Array.isArray(jsonFinalResponse.output)) {
           if (jsonFinalResponse.output.length === 1) {

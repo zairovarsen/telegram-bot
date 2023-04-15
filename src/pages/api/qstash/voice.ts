@@ -10,10 +10,6 @@ import { performance } from 'perf_hooks';
 import { VoiceBody, processVoice } from "@/lib/voice";
 
 
-export interface VerifyRequest extends NextApiRequest {
-  signature: string;
-}
-
 export async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -25,11 +21,9 @@ export async function handler(
     const { message, userId, questionType } = body as VoiceBody;
     await processVoice(message, userId, questionType);
     
-
      const endTime = performance.now();
      const elapsedTime = endTime - startTime;
      console.log(`Elapsed time: ${elapsedTime} ms`);
-
     res.status(200).send("OK");
   } catch (err) {
     console.error(err);

@@ -128,7 +128,7 @@ export const updateImageAndTokensTotal = async (
     });
     if (error) {
       console.error(
-        `Error while updating user image generations remaining and tokens: ${error}`
+        `Error while updating user image generations remaining and tokens: ${JSON.stringify(error)}`
       );
       return false;
     } else {
@@ -362,11 +362,11 @@ export const matchDocuments = async (
 
 export const getUserDistinctUrls = async (
   user_id: number
-): Promise<DistinctUrls[] | null> => {
+): Promise<string[] | null> => {
   try {
     const { data: urls, error } = await supabaseClient
-      .from("documents")
-      .select("url")
+      .from("distinct_user_file_url")
+      .select("*")
       .eq("user_id", user_id)
 
     if (error) {
@@ -375,9 +375,9 @@ export const getUserDistinctUrls = async (
     } 
     else {
       if (!urls || urls.length === 0) {
-        return []
+        return [];
       }
-      return urls.map((url) => url.url);
+      return urls.map((url) => url.url || '');
     }
   } catch (err) {
     console.error(`Exception occurred while getting user distinct urls: ${err}`);

@@ -5,7 +5,7 @@ import {
   INTERNAL_SERVER_ERROR_MESSAGE,
 } from "@/utils/constants";
 import { deleteImage, uploadImage } from "@/lib/cloudinary";
-import { ConversionModel, ConversionModelAllButOpenJourney } from "@/types";
+import { ConversionModel, ConversionModelAllButOpenJourney, TelegramBot } from "@/types";
 import {
   ReplicatePredictionResponse,
   generateGfpGan,
@@ -16,6 +16,7 @@ import {
 } from "@/lib/replicate";
 import { backOff } from "exponential-backoff";
 import { updateImageGenerationsRemaining } from "./supabase";
+import { getFile } from "@/lib/bot";
 
 export type ImageGenerationResult = {
   success: true;
@@ -28,18 +29,10 @@ export type ImageGenerationResult = {
 
 // The body of the request sent by QStash
 export type ImageBody = {
-  chatId: number;
-  messageId: number;
-  fileId: string;
+  message: TelegramBot.Message;
   userId: number;
   conversionModel: ConversionModelAllButOpenJourney
-} | {
-  chatId: number;
-  messageId: number;
-  userId: number;
-  conversionModel: ConversionModel.OPENJOURNEY; 
-  prompt: string;
-}
+} 
 
 /**
  * Helper function to check if request body has a fileId
@@ -60,42 +53,6 @@ export const hasFileId = (obj: any): obj is {fileId: string} => {
  */
 export const hasPrompt = (obj: any): obj is {prompt: string} => {
   return typeof obj === 'object' && obj !== null && 'prompt' in obj;
-}
-
-/**
- * Parse the request body and return the appropriate type
- * 
- * @param body 
- * @returns 
- */
-export const parseRequestBody = (body: any): ImageBody => {
-  const { chatId, messageId, fileId, userId, conversionModel, prompt } = body;
-
-  if (hasFileId(body) && hasPrompt(body)) {
-    throw new Error('Invalid request body: both fileId and prompt properties are present');
-  }
-
-  if (hasFileId(body)) {
-    return {
-      chatId,
-      messageId,
-      fileId,
-      userId,
-      conversionModel
-    };
-  }
-
-  if (hasPrompt(body)) {
-    return {
-      chatId,
-      messageId,
-      userId,
-      conversionModel,
-      prompt
-    };
-  }
-
-  throw new Error('Invalid request body: neither fileId nor prompt property is present');
 }
 
 /**
@@ -225,13 +182,22 @@ export async function processImagePromptOpenJourney(
  * @return {Promise<EmbeddingResult>} - EmbeddingResult
  */
 export async function processImage(
-  imagePath: string,
+  message: TelegramBot.Message,
   userId: number,
   conversionModel: Omit<ConversionModel, "openjourney">
 ): Promise<ImageGenerationResult> {
+  const {chat: {id: chatId}, message_id: messageId} = message;
   // Acquire a lock on the user resource
   const userKey = `user:${userId}`;
   const userLockResource = `locks:user:image:${userId}`;
+  let file_id = "";
+  if (message.document) {
+    file_id = message.document.file_id;
+  } else if (message.photo) {
+    file_id = message.photo[message.photo.length - 1].file_id;
+  } else {
+    return {success: false, errorMessage: INTERNAL_SERVER_ERROR_MESSAGE};
+  }
   try {
     let unlock = await lock(userLockResource);
     // used to remove the image from cloudinary after some time
@@ -249,7 +215,8 @@ export async function processImage(
           errorMessage: INSUFFICEINT_IMAGE_GENERATIONS_MESSAGE,
         };
       }
-
+      const file = await getFile(file_id);
+      const imagePath = `https://api.telegram.org/file/bot${process.env.NEXT_PUBLIC_TELEGRAM_TOKEN}/${file.file_path}`
       const response = await fetch(imagePath);
       const arrayBuffer = await response.arrayBuffer();
       const fileBuffer = Buffer.from(arrayBuffer as any, "binary").toString(
@@ -290,7 +257,6 @@ export async function processImage(
         };
       }
 
-      console.log(`id is ${generationResponse.id}`);
       const id = generationResponse.id;
       let generatedImage = null;
 

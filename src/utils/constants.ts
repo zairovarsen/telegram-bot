@@ -101,11 +101,21 @@ export const USER_CREATION_ERROR_MESSAGE = `
 ⚠️ Oops! We encountered an error while creating your account. We apologize for the inconvenience. Please give it another try later, or reach out to our support team if the issue persists. Thank you for your understanding! 🤖
 `;
 
+export const INVALID_MESSAGE_TYPE_MESSAGE = `
+⚠️ Oops! It seems like you've sent an invalid message type. Please double-check your options and try again. If you need assistance, feel free to reach out to our support team. We're here to help! Thanks for using our Telegram bot! 🤖
+`
+
 export const UNABLE_TO_PROCESS_IMAGE_MESSAGE = `
 ⚠️ Unable to Process Image ⚠️
 
 We regret to inform you that InsightAI is currently unable to process the image you uploaded. We apologize for any inconvenience this may cause. Please try again later, and if the issue persists, feel free to reach out to our support team for assistance. Thank you for your understanding and patience.
 `;
+
+export const UNABLE_TO_PROCESS_DOCUMENT_MESSAGE = `
+⚠️ Unable to Process Document ⚠️
+
+We regret to inform you that InsightAI is currently unable to process the document you uploaded. We apologize for any inconvenience this may cause. Please try again later, and if the issue persists, feel free to reach out to our support team for assistance. Thank you for your understanding and patience.
+`
 
 export const UNABLE_TO_PROCESS_PDF_MESSAGE = `
 ⚠️ Unable to Process PDF ⚠️
@@ -289,8 +299,7 @@ export const IMAGE_GENERATION_OPTIONS = [
 ];
 
 export const GENERATED_IMAGE_MESSAGE = `
-🎉 Congratulations! Your image has been successfully processed by InsightAI. Take a look at the generated image above and enjoy the results! 😊
-`;
+🎉 Congratulations! Your image has been successfully processed by InsightAI. Take a look at the generated image above and enjoy the results! 😊`;
 
 export const IMAGE_GENERATION_ERROR_MESSAGE = `
 ⚠️ Image Generation Error ⚠️

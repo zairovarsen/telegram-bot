@@ -139,25 +139,15 @@ export interface Database {
       }
     }
     Functions: {
-      increment_two_fields:
-        | {
-            Args: {
-              x1: number
-              x2: number
-              x3: number
-              row_id: string
-            }
-            Returns: undefined
-          }
-        | {
-            Args: {
-              x1: number
-              x2: number
-              x3: number
-              row_id: number
-            }
-            Returns: undefined
-          }
+      increment_two_fields: {
+        Args: {
+          x1: number
+          x2: number
+          x3: number
+          row_id: number
+        }
+        Returns: undefined
+      }
       match_documents: {
         Args: {
           query_embedding: string

@@ -12,11 +12,6 @@ import { PdfBody, processPdf } from "@/lib/pdf";
 
 import { performance } from 'perf_hooks';
 
-
-export interface VerifyRequest extends NextApiRequest {
-  signature: string;
-}
-
 export async function handler(
   req: NextApiRequest,
   res: NextApiResponse
