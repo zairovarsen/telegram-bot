@@ -334,7 +334,7 @@ export const processPdfQuestion = async (
       console.log(`Completion: `, JSON.stringify(completion, null, 2));
 
       // get a json object from the response
-      sendMessage(chatId,completion.choices[0].message?.content as string, {
+      await sendMessage(chatId,completion.choices[0].message?.content as string, {
         reply_to_message_id: messageId,
       });
     } catch (err) {
