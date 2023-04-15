@@ -126,6 +126,13 @@ const generateDocuments = async (
     let start = 0;
     let remainingTokens = totalTokens;
     console.log(`Number of lines: ${lines.length}`)
+
+    if (lines.length >= 70000) {
+      return {
+        success: false,
+        errorMessage: UNABLE_TO_PROCESS_PDF_MESSAGE
+      }
+    }
      
     while (start < lines.length) {
 

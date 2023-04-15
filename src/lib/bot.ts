@@ -1,6 +1,6 @@
 import { TelegramBot, TelegramBotMethods  } from "@/types";
 
-const baseURL = `https://api.telegram.org/bot${process.env.NEXT_PUBLIC_TELEGRAM_TOKEN}`
+export const baseURL = `https://api.telegram.org/bot${process.env.NEXT_PUBLIC_TELEGRAM_TOKEN}`
 
 
 export const sendMessage: TelegramBotMethods['sendMessage'] = async (chatId, text, options) => {

@@ -21,19 +21,10 @@ export async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  const signature = (req.headers["upstash-signature"] || "") as string;
   const body = req.body;
   const startTime = performance.now();
 
-
-  if (!signature) {
-    console.error("Received event from unauthorized source");
-    res.status(401).send("Unauthorized");
-    return;
-  }
-
   try {
-  
     const { chatId, messageId, userId, fileId } = body as PdfBody;
     
     const file = await getFile(fileId);

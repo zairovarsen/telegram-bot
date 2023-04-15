@@ -2,7 +2,6 @@ import { TelegramBot } from "@/types";
 import { getRedisClient, hget, lock } from "@/lib/redis";
 import {
   createCompletion,
-  createCompletionStream,
   createEmbedding,
   createModeration,
   getPayload,
@@ -15,14 +14,16 @@ import {
   UNANSWERED_QUESTION_MESSAGE,
   UNANSWERED_QUESTION_MESSAGE_PDF,
 } from "@/utils/constants";
-import { editMessageText, sendChatAction, sendMessage } from "@/lib/bot";
+import { sendChatAction, sendMessage } from "@/lib/bot";
 import {
+  calculateWhisperTokens,
   estimateEmbeddingTokens,
   estimateTotalCompletionTokens,
 } from "@/utils/tokenizer";
 import { matchDocuments, updateUserTokens } from "@/lib/supabase";
 import { CreateEmbeddingResponse } from "openai";
 import { backOff } from "exponential-backoff";
+
 
 /**
  * Process general question using OpenAI completion API
@@ -352,3 +353,6 @@ export const processPdfQuestion = async (
     });
   }
 };
+
+
+  

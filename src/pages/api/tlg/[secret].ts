@@ -1,39 +1,16 @@
 import {
-  HELP_MESSAGE,
   WELCOME_MESSAGE,
   TELEGRAM_FILE_SIZE_LIMIT,
-  INVALID_COMMAND_MESSAGE,
-  SUPPORT_HELP_MESSAGE,
-  TERMS_AND_CONDITIONS,
-  PRICING_PLANS,
-  PRICING_PLANS_MESSAGE,
-  IMAGE_GENERATION_MESSAGE,
-  IMAGE_GENERATION_OPTIONS,
-  INVALID_FILE_MESSAGE,
   TEXT_GENERATION_MESSAGE,
   TEXT_GENERATION_OPTIONS,
   PROCESSING_BACKGROUND_MESSAGE,
   INTERNAL_SERVER_ERROR_MESSAGE,
   FILE_SIZE_EXCEEDED_MESSAGE,
-  INITIAL_IMAGE_GENERATION_COUNT,
-  INITIAL_TOKEN_COUNT,
-  USER_CREATION_ERROR_MESSAGE,
-  TELEGRAM_IMAGE_SIZE_LIMIT,
-  IMAGE_SIZE_EXCEEDED_MESSAGE,
-  INSUFFICIENT_TOKENS_MESSAGE,
   MIN_PROMPT_LENGTH,
   MIN_PROMPT_MESSAGE,
-  INVALID_PRICING_PLAN_MESSAGE,
   MAX_PROMPT_LENGTH,
   MAX_PROMPT_MESSAGE,
-  UNANSWERED_QUESTION_MESSAGE,
-  MODERATION_ERROR_MESSAGE,
-  MAX_TOKENS_COMPLETION,
-  CONTEXT_TOKENS_CUTOFF,
-  UNANSWERED_QUESTION_MESSAGE_PDF,
-  NO_DATASETS_MESSAGE,
   WORKING_ON_NEW_FEATURES_MESSAGE,
-  MESSAGE_ACCEPTANCE_MESSAGE,
   AUIDO_FILE_EXCEEDS_LIMIT_MESSAGE,
   OPEN_AI_AUDIO_LIMIT,
 } from "@/utils/constants";
@@ -43,41 +20,10 @@ import {
   getEmbeddingsRateLimitResponse,
   imageGenerationRateLimit,
 } from "@/lib/rate-limit";
-import { NextApiRequest, NextApiResponse } from "next";
-// import { generateEmbeddings } from "@/lib/generateEmbeddings";
-import {
-  createNewUser,
-  getUserDataFromDatabase,
-  createNewPayment,
-  updateImageAndTokensTotal,
-  matchDocuments,
-  updateUserTokens,
-  getUserDistinctUrls,
-} from "@/lib/supabase";
 import { bytesToMegabytes } from "@/utils/bytesToMegabytes";
-import { getRedisClient, hget, hgetAll, hmset, lock } from "@/lib/redis";
-
-import { ConversionModel, TelegramBot, UserInfoCache } from "@/types";
+import {  TelegramBot } from "@/types";
 import { qStash } from "@/lib/qstash";
-import { INSUFFICEINT_IMAGE_GENERATIONS_MESSAGE } from "@/utils/constants";
 import { PdfBody } from "@/lib/pdf";
-import { ImageBody } from "@/lib/image";
-import {
-  createCompletion,
-  createEmbedding,
-  createModeration,
-  createTranslation,
-  getPayload,
-} from "@/lib/openai";
-import {
-  calculateWhisperTokens,
-  estimateEmbeddingTokens,
-  estimateTotalCompletionTokens,
-} from "@/utils/tokenizer";
-import { CreateEmbeddingResponse } from "openai";
-import { backOff } from "exponential-backoff";
-import { createReadStream, unlinkSync, writeFileSync } from "fs";
-import { convertToWav, getFileSizeInMb } from "@/utils/convertToWav";
 import { sendMessage } from "@/lib/bot";
 import { middleware } from "@/lib/middleware";
 import { processGeneralQuestion, processPdfQuestion } from "@/lib/question";
@@ -221,22 +167,49 @@ const tlg = async (req: any, res: any) => {
         //     reply_to_message_id: messageId,
         //   });
         // }
+      } else if (message.voice) {
+           const { voice } = message as any;
+        const {file_size} = voice;
+        const maxFileSizeInBytes = OPEN_AI_AUDIO_LIMIT * 1024 * 1024;
+
+        if (file_size > maxFileSizeInBytes) {
+           await sendMessage(chatId, AUIDO_FILE_EXCEEDS_LIMIT_MESSAGE, {
+            reply_to_message_id: message_id,
+          });
+          return;
+        }
+
+        await sendMessage(chatId, TEXT_GENERATION_MESSAGE, {
+          reply_to_message_id: message_id,
+          reply_markup: {
+            inline_keyboard: TEXT_GENERATION_OPTIONS.map((e) => {
+              return [
+                {
+                  text: e.title,
+                  callback_data: e.title,
+                },
+              ];
+            }),
+          },
+        });
       }
     }
 
     // deals with callback queries
     else if (update.callback_query) {
       const { callback_query } = update;
-      const { data, message, from } = callback_query;
+      const { data, message, from: {id: userId} } = callback_query;
       if (
         !message ||
         !message.reply_to_message ||
-        !message.reply_to_message.text
-      )
-        return;
-      const { text } = message.reply_to_message;
+        !data
+      ) {
+       return;
+      }
 
-      const rateLimitResult = await checkUserRateLimit(from.id);
+      const { text, voice, message_id: messageId, chat: {id: chatId}} = message.reply_to_message;
+
+      const rateLimitResult = await checkUserRateLimit(userId);
       // rate limit exceeded
       if (!rateLimitResult.result.success) {
         console.error("Rate limit exceeded");
@@ -250,20 +223,54 @@ const tlg = async (req: any, res: any) => {
         return;
       }
 
+
       if (
         data !== "Basic Plan" &&
         data !== "Pro Plan" &&
         data !== "Business Plan"
       ) {
         await sendMessage(message.chat.id, PROCESSING_BACKGROUND_MESSAGE, {
-          reply_to_message_id: message.reply_to_message.message_id,
+          reply_to_message_id: messageId,
         });
       }
 
-      if (data == "General Question") {
-        await processGeneralQuestion(text, message?.reply_to_message, from.id);
-      } else if (data == "PDF Question") {
-        await processPdfQuestion(text, message?.reply_to_message, from.id);
+       if (voice && (data == 'General Question' || data == 'PDF Question' || data == 'Goal') ) {
+        try {
+          const body = {
+            message: message.reply_to_message,
+            userId,
+            questionType: data 
+          };
+
+          const qStashPublishResponse = await qStash.publishJSON({
+            url: `${process.env.QSTASH_URL}/voice` as string,
+            body,
+          });
+          if (!qStashPublishResponse || !qStashPublishResponse.messageId) {
+            await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
+              reply_to_message_id: messageId,
+            });
+          }
+          console.log(`QStash Response: ${qStashPublishResponse.messageId}`);
+        } catch (err) {
+          console.error(err);
+          await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
+            reply_to_message_id: messageId,
+          });
+        }
+      } else if (text && data == "General Question") {
+        await processGeneralQuestion(text, message?.reply_to_message, userId);
+      } else if (text && data == "PDF Question") {
+        await processPdfQuestion(text, message?.reply_to_message, userId);
+      } else if (text && data == 'Goal') {
+        await sendMessage(chatId, WORKING_ON_NEW_FEATURES_MESSAGE, {
+          reply_to_message_id: messageId,
+        })
+      } 
+      else {
+        await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
+          reply_to_message_id: messageId,
+        })
       }
     }
   };
