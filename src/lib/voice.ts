@@ -5,7 +5,7 @@ import { processImagePromptOpenJourney } from "@/lib/image";
 import { TelegramBot } from "@/types";
 import { getRedisClient, hget, lock } from "@/lib/redis";
 import { calculateWhisperTokens } from "@/utils/tokenizer";
-import { baseURL, getFile, sendMessage } from "@/lib/bot";
+import { getFile, sendMessage } from "@/lib/bot";
 import { AUIDO_FILE_EXCEEDS_LIMIT_MESSAGE, INSUFFICIENT_TOKENS_MESSAGE, INTERNAL_SERVER_ERROR_MESSAGE, OPEN_AI_AUDIO_LIMIT, WORKING_ON_NEW_FEATURES_MESSAGE } from "@/utils/constants";
 import { createTranslation } from "@/lib/openai";
 import { updateUserTokens } from "@/lib/supabase";
