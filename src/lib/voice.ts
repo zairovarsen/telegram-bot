@@ -5,7 +5,7 @@ import { processImagePromptOpenJourney } from "@/lib/image";
 import { TelegramBot } from "@/types";
 import { getRedisClient, hget, lock } from "@/lib/redis";
 import { calculateWhisperTokens } from "@/utils/tokenizer";
-import { getFile, sendMessage } from "@/lib/bot";
+import { getFile, sendDocument, sendMessage } from "@/lib/bot";
 import { AUIDO_FILE_EXCEEDS_LIMIT_MESSAGE, INSUFFICIENT_TOKENS_MESSAGE, INTERNAL_SERVER_ERROR_MESSAGE, OPEN_AI_AUDIO_LIMIT, WORKING_ON_NEW_FEATURES_MESSAGE } from "@/utils/constants";
 import { createTranslation } from "@/lib/openai";
 import { updateUserTokens } from "@/lib/supabase";
@@ -122,16 +122,17 @@ export const processVoice = async (
        await redisMulti.exec();
    
          const { text: question } = translationResponse;
-         console.log(`Question: `, question);
    
           if (questionType == 'General Question') {
             return await processGeneralQuestion(question, message, userId);
-          } else if (questionType == 'Pdf Question') {
+          } else if (questionType == 'PDF Question') {
             return await processPdfQuestion(question, message, userId);
           } else {
             const result = await processImagePromptOpenJourney(question, userId);
             if (result.success) {
-              // send document
+              await sendDocument(chatId, result.fileUrl, {
+                reply_to_message_id: messageId
+              })
             } else {
               await sendMessage(chatId, result.errorMessage, {
                 reply_to_message_id: messageId

@@ -32,7 +32,13 @@ export type ImageBody = {
   message: TelegramBot.Message;
   userId: number;
   conversionModel: ConversionModelAllButOpenJourney
-} 
+} | 
+{
+  message: TelegramBot.Message;
+  userId: number;
+  conversionModel: ConversionModel.OPENJOURNEY
+  text: string,
+}
 
 /**
  * Helper function to check if request body has a fileId
@@ -41,7 +47,6 @@ export type ImageBody = {
  * @returns 
  */
 export const hasFileId = (obj: any): obj is {fileId: string} => {
-  console.log(typeof(obj));
   return typeof obj === 'object' && obj !== null && 'fileId' in obj;
 }
 

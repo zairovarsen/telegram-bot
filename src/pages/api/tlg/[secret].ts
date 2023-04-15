@@ -46,6 +46,7 @@ import { PdfBody } from "@/lib/pdf";
 import {
   answerCallbackQuery,
   answerPreCheckoutQuery,
+  sendDocument,
   sendInvoice,
   sendMessage,
 } from "@/lib/bot";
@@ -524,7 +525,7 @@ You have access to:
 
       if (
         voice &&
-        (data == "General Question" || data == "PDF Question" || data == "Goal")
+        (data == "General Question" || data == "PDF Question" || data == "Goal" || data == 'Imagine')
       ) {
         try {
           const body = {
@@ -557,9 +558,12 @@ You have access to:
         await sendMessage(chatId, WORKING_ON_NEW_FEATURES_MESSAGE, {
           reply_to_message_id: messageId,
         });
-      } else if (data == "Room" || data == "Restore" || data == "Scribble") {
+      } 
+      else if (data == "Room" || data == "Restore" || data == "Scribble" || (data == 'Imagine' && text)) {
         try {
-          const body: ImageBody = {
+          let body = {};
+          if (data !== 'Imagine') {
+          body = {
             message: message.reply_to_message,
             userId,
             conversionModel:
@@ -567,8 +571,16 @@ You have access to:
                 ? ConversionModel.CONTROLNET_HOUGH
                 : data == "Scribble"
                 ? ConversionModel.CONTROLNET_SCRIBBLE
-                : ConversionModel.GFPGAN,
+                : ConversionModel.GFPGAN
           };
+        } else {
+          body = {
+            message: message.reply_to_message,
+            userId,
+            conversionModel: ConversionModel.OPENJOURNEY,
+            text
+          }
+        }
 
           const qStashPublishResponse = await qStash.publishJSON({
             url: `${process.env.QSTASH_URL}/image` as string,

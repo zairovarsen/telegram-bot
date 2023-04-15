@@ -7,8 +7,10 @@ import {
 import {
   ImageBody,
   processImage,
+  processImagePromptOpenJourney,
 } from "@/lib/image";
 import { verifySignature } from "@upstash/qstash/nextjs";
+import { ConversionModel } from "@/types";
 
 export async function handler(
     req: NextApiRequest,
@@ -20,7 +22,13 @@ export async function handler(
     const { message, userId, conversionModel } = body as ImageBody;
     const { chat: {id: chatId}, message_id: messageId } = message;
 
-    const image = await processImage(message, userId, conversionModel)
+    let image;
+    if (conversionModel == ConversionModel.OPENJOURNEY) {
+      const { text} = body;
+      image = await processImagePromptOpenJourney(text, userId);
+    } else {
+      image = await processImage(message, userId, conversionModel)
+    }
 
     if (!image.success) {
       await sendMessage(chatId, image.errorMessage, {
