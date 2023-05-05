@@ -18,26 +18,24 @@ export const EXCLUDE_LINK_LIST = [
   "tiktok",
 ];
 
-
 export const MAX_TOKENS_COMPLETION = 500;
-
 
 export const OPEN_AI_AUDIO_LIMIT = 24; // it is 25 but we are leaving a buffer of 1 second
 
 export const AUIDO_FILE_EXCEEDS_LIMIT_MESSAGE = `
 To provide you with the best experience, we kindly request that you only send audio files no larger than 24 MB. This helps us process your files quickly and efficiently. If you have any questions or need assistance, feel free to reach out. Happy analyzing! 🚀
-`
+`;
 
-export const MAX_PROMPT_MESSAGE= `
-To get the best results from our InsightAI, please provide a maximum prompt length of 200 characters. This will help us generate more accurate and meaningful responses tailored to your needs. Thank you for using InsightAI! 😊`
+export const MAX_PROMPT_MESSAGE = `
+To get the best results from our InsightAI, please provide a maximum prompt length of 200 characters. This will help us generate more accurate and meaningful responses tailored to your needs. Thank you for using InsightAI! 😊`;
 
 export const MESSAGE_ACCEPTANCE_MESSAGE = `
 Thank you for your question! Our bot is currently working on generating a response for you. This may take a few moments, so please be patient. We appreciate your patience and understanding!
-`
+`;
 
 export const WORKING_ON_NEW_FEATURES_MESSAGE = `
 🛠️ We're currently working hard to bring you a new feature! Stay tuned for updates and thank you for your patience! 🤖
-`
+`;
 
 export const MIN_PROMPT_MESSAGE = `
 To get the best results from our InsightAI, please provide a minimum prompt length of 10 characters. This will help us generate more accurate and meaningful responses tailored to your needs. Thank you for using InsightAI! 😊`;
@@ -69,7 +67,7 @@ We hope this information helps you make the most of your experience with Insight
 
 export const DUPLICATE_FILE_UPLOAD_MESSAGE = `
 🔍 It looks like you may have already uploaded this file recently. If you'd like to ask questions or get insights from the document, please feel free to do so! If you believe this is a mistake and you have a different file to upload, kindly double-check the file and try again. InsightAI is here to help you! 😊
-`
+`;
 
 export const INVALID_PRICING_PLAN_MESSAGE = `
 ⚠️ Oops! It seems like you've selected an invalid pricing plan. 🙁 Please double-check your options and choose a valid plan to continue. If you need assistance, feel free to reach out to our support team. We're here to help! Thanks for using our Telegram bot! 🤖
@@ -81,21 +79,21 @@ export const ERROR_GENERATING_EMBEDDINGS_MESSAGE = `
 
 export const MODERATION_ERROR_MESSAGE = `
 ⚠️ We're sorry, but it appears that your question doesn't adhere to our moderation guidelines. InsightAI is committed to maintaining a safe and respectful environment for all users. Please consider rephrasing your query or asking a different question that is in line with our guidelines. Thank you for your understanding and cooperation.
-`
+`;
 
 export const UNANSWERED_QUESTION_MESSAGE = `
 ⚠️ We regret to inform you that InsightAI is currently unable to provide an answer to your question. We apologize for any inconvenience this may cause. Please feel free to try again later or ask another question. If the issue persists, don't hesitate to reach out to our support team for assistance. Thank you for your understanding and patience.
-`
+`;
 
 export const NO_DATASETS_MESSAGE = `
 🤖 You haven't trained any datasets just yet.
 
 To get started, simply upload a pdf file. You can then ask it any question you want and let the power of InsightAI do the rest.
-`
+`;
 
 export const UNANSWERED_QUESTION_MESSAGE_PDF = `
 ⚠️ We regret to inform you that InsightAI is currently unable to provide an answer to your question based on your uploaded pdf files. We apologize for any inconvenience this may cause. Please feel free to try again later or check your datasets using command /dt to ensure you have the neccessary files. If the issue persists, don't hesitate to reach out to our support team for assistance. Thank you for your understanding and patience.
-`
+`;
 
 export const USER_CREATION_ERROR_MESSAGE = `
 ⚠️ Oops! We encountered an error while creating your account. We apologize for the inconvenience. Please give it another try later, or reach out to our support team if the issue persists. Thank you for your understanding! 🤖
@@ -103,7 +101,7 @@ export const USER_CREATION_ERROR_MESSAGE = `
 
 export const INVALID_MESSAGE_TYPE_MESSAGE = `
 ⚠️ Oops! It seems like you've sent an invalid message type. Please double-check your options and try again. If you need assistance, feel free to reach out to our support team. We're here to help! Thanks for using our Telegram bot! 🤖
-`
+`;
 
 export const UNABLE_TO_PROCESS_IMAGE_MESSAGE = `
 ⚠️ Unable to Process Image ⚠️
@@ -115,7 +113,7 @@ export const UNABLE_TO_PROCESS_DOCUMENT_MESSAGE = `
 ⚠️ Unable to Process Document ⚠️
 
 We regret to inform you that InsightAI is currently unable to process the document you uploaded. We apologize for any inconvenience this may cause. Please try again later, and if the issue persists, feel free to reach out to our support team for assistance. Thank you for your understanding and patience.
-`
+`;
 
 export const UNABLE_TO_PROCESS_PDF_MESSAGE = `
 ⚠️ Unable to Process PDF ⚠️
@@ -125,7 +123,7 @@ We regret to inform you that InsightAI is currently unable to process the PDF fi
 
 export const PDF_PROCESSING_SUCCESS_MESSAGE = `
 🎉 Success! 🎉 InsightAI has successfully processed the PDF document and is now ready to assist you. Feel free to ask anything you want, and let our AI-powered bot provide you with valuable insights. Let's explore the knowledge together! 🤖🔍
-`
+`;
 
 export const INTERNAL_SERVER_ERROR_MESSAGE = `
 ⚠️ Internal Server Error ⚠️
@@ -246,6 +244,8 @@ export const TEXT_GENERATION_MESSAGE = `
 
 🔵 General Question - Get answers to any question you have, utilizing our advanced AI technology..
 
+🔵 Meme - Generate a meme based on your text description.
+
 🔵 Goal - Set a goal for our AI, and watch it devise a strategy and provide reasoning to achieve it..
 
 Please choose one of the above options to continue.
@@ -259,16 +259,23 @@ export const TEXT_GENERATION_OPTIONS = [
   },
   {
     title: "PDF Question",
-    description: "Get answers to any question based on the documents you uploaded",
+    description:
+      "Get answers to any question based on the documents you uploaded",
   },
   {
     title: "General Question",
-    description: "Get answers to any question you have, utilizing our advanced AI technology.",
+    description:
+      "Get answers to any question you have, utilizing our advanced AI technology.",
   },
   {
     title: "Goal",
-    description: "Set a goal for our AI, and watch it devise a strategy and provide reasoning to achieve it."
-  }
+    description:
+      "Set a goal for our AI, and watch it devise a strategy and provide reasoning to achieve it.",
+  },
+  {
+    title: "Meme",
+    description: "Generate a meme based on your text description.",
+  },
 ];
 
 export const IMAGE_GENERATION_MESSAGE = `
@@ -301,10 +308,66 @@ export const IMAGE_GENERATION_OPTIONS = [
 export const GENERATED_IMAGE_MESSAGE = `
 🎉 Congratulations! Your image has been successfully processed by InsightAI. Take a look at the generated image above and enjoy the results! 😊`;
 
+export const GENERATED_MEME_MESSAGE = `
+🎉 Congratulations! Your meme has been successfully generated by InsightAI. Take a look at the generated meme above and enjoy the results! 😊`;
+
 export const IMAGE_GENERATION_ERROR_MESSAGE = `
 ⚠️ Image Generation Error ⚠️
 
 Oops! We encountered an issue while processing your image. Our team at InsightAI is continuously working to improve our service. Please try again later, or feel free to reach out to our support team if you need any assistance. Thank you for your understanding!`;
+
+export const MEME_OPTIONS = [
+  {
+    template_id: "181913649",
+    name: "Drake Hotline Bling",
+  },
+  {
+    template_id: "87743020",
+    name: "Two Buttons",
+  },
+  {
+    template_id: "112126428",
+    name: "Distracted Boyfriend",
+  },
+  {
+    template_id: "217743513",
+    name: "UNO Draw 25 Cards",
+  },
+  {
+    template_id: "131087935",
+    name: "Running Away Balloon",
+  },
+  {
+    template_id: "124822590",
+    name: "Left Exit 12 Off Ramp",
+  },
+  {
+    template_id: "4087833",
+    name: "Waiting Skeleton",
+  },
+  {
+    template_id: "131940431",
+    name: "Gru's Plan",
+  },
+  {
+    template_id: "97984",
+    name: "Disaster Girl",
+  },
+  {
+    template_id: "135256802",
+    name: "Epic Handshake",
+  },
+] as const;
+
+export const MEME_NAMES = MEME_OPTIONS.map((meme) => meme.name);
+
+export const MEMES_MESSAGE = `
+🌟 Welcome to InsightAI MemeS 🌟
+
+Find the perfect meme to fuel your creativity 🚀🌈:
+
+Please select a meme from the list below:
+`;
 
 export const PRICING_PLANS_MESSAGE = `
 🌟 Welcome to InsightAI Pricing Plans 🌟
@@ -357,4 +420,4 @@ export const PRICING_PLANS = [
 export const INITIAL_TOKEN_COUNT = 100000;
 export const INITIAL_IMAGE_GENERATION_COUNT = 5;
 
-export const AllowedTelegramUsers = [1021173367]
+export const AllowedTelegramUsers = [1021173367];

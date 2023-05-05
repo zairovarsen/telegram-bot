@@ -155,7 +155,7 @@ export const createCompletionStream = async (
  * @param model The model to use
  * @returns The completion payload
  */
-export const getPayload = (prompt: string, model: OpenAIModel, stream?: boolean): CreateChatCompletionRequest => {
+export const getPayload = (prompt: string, model: OpenAIModel, stream?: boolean, messagesCustom?: CreateChatCompletionRequest['messages']): CreateChatCompletionRequest => {
   const payload = {
     model,
     temperature: 0.1,
@@ -166,6 +166,13 @@ export const getPayload = (prompt: string, model: OpenAIModel, stream?: boolean)
     stream: stream || false,
     n: 1,
   };
+
+  if (messagesCustom) {
+    return {
+      ...payload,
+      messages: messagesCustom,
+    }
+  }
 
   return {
     ...payload,
