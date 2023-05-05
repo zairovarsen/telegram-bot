@@ -9,6 +9,9 @@ import {
   INVALID_FILE_MESSAGE,
   INVALID_MESSAGE_TYPE_MESSAGE,
   INVALID_PRICING_PLAN_MESSAGE,
+  MEMES_MESSAGE,
+  MEME_NAMES,
+  MEME_OPTIONS,
   NO_DATASETS_MESSAGE,
   PRICING_PLANS,
   PRICING_PLANS_MESSAGE,
@@ -58,6 +61,7 @@ import {
   updateImageAndTokensTotal,
 } from "@/lib/supabase";
 import { getRedisClient, lock } from "@/lib/redis";
+import { MemeType, processMemeGeneration } from "@/lib/meme";
 
 export const config = {
   runtime: "edge",
@@ -484,7 +488,8 @@ You have access to:
       if (
         data == "General Question" ||
         data == "PDF Question" ||
-        data == "Voice"
+        data == "Voice" ||
+        data == "Meme"
       ) {
         if (userData.tokens <= 0) {
           await sendMessage(chatId, INSUFFICIENT_TOKENS_MESSAGE, {
@@ -515,7 +520,8 @@ You have access to:
       if (
         data !== "Basic Plan" &&
         data !== "Pro Plan" &&
-        data !== "Business Plan"
+        data !== "Business Plan" &&
+        data !== "Meme"
       ) {
         await sendMessage(message.chat.id, PROCESSING_BACKGROUND_MESSAGE, {
           reply_to_message_id: messageId,
@@ -557,6 +563,27 @@ You have access to:
         await sendMessage(chatId, WORKING_ON_NEW_FEATURES_MESSAGE, {
           reply_to_message_id: messageId,
         });
+      } else if (text && data == "Meme") {
+        await sendMessage(chatId, MEMES_MESSAGE, {
+          reply_to_message_id: messageId,
+          reply_markup: {
+            inline_keyboard: MEME_OPTIONS.map((meme) => {
+              return [
+                {
+                  text: meme.name,
+                  callback_data: meme.name,
+                },
+              ];
+            }),
+          },
+        });
+      } else if (text && MEME_NAMES.includes(data as MemeType)) {
+        await processMemeGeneration(
+          text,
+          data as MemeType,
+          message?.reply_to_message,
+          userId
+        );
       } else if (data == "Room" || data == "Restore" || data == "Scribble") {
         try {
           const body: ImageBody = {
