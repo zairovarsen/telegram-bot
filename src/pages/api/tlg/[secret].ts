@@ -1,4 +1,5 @@
 import {
+  DEFAULT_MAX_LOOPS_FREE,
   HELP_MESSAGE,
   IMAGE_GENERATION_MESSAGE,
   IMAGE_GENERATION_OPTIONS,
@@ -43,34 +44,56 @@ import {
   imageGenerationRateLimit,
 } from "@/lib/rate-limit";
 import { bytesToMegabytes } from "@/utils/bytesToMegabytes";
-import { ConversionModel, TelegramBot, UserInfoCache } from "@/types";
+import { ConversionModel, Task, TelegramBot } from "@/types";
 import { qStash } from "@/lib/qstash";
 import { PdfBody } from "@/lib/pdf";
 import {
-  answerCallbackQuery,
   answerPreCheckoutQuery,
-  sendDocument,
+  sendChatAction,
   sendInvoice,
   sendMessage,
 } from "@/lib/bot";
 import { middleware } from "@/lib/middleware";
 import { processGeneralQuestion, processPdfQuestion } from "@/lib/question";
-import { ImageBody } from "@/lib/image";
 import {
   createNewPayment,
   getUserDistinctUrls,
   updateImageAndTokensTotal,
 } from "@/lib/supabase";
-import { getRedisClient, lock } from "@/lib/redis";
+import { del, getRedisClient, hget, lock, safeGetObject, set } from "@/lib/redis";
 import { MemeType, processMemeGeneration } from "@/lib/meme";
+import { Readable } from "stream";
+import { handleAudioRequest } from "@/lib/audio";
+import { analyzeTaskAgent, createTasksAgent, executeTaskAgent, startGoalAgent } from "@/lib/agent";
+import { send } from "process";
 
 export const config = {
   runtime: "edge",
   regions: ["fra1"], // Only execute this function in Frankfurt fra1
 };
 
+function readableStreamToReadable(readableStream: any) {
+  const reader = readableStream.getReader();
+  const readable = new Readable({
+    async read(size) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          this.push(null);
+        } else {
+          this.push(Buffer.from(value));
+        }
+      } catch (error) {
+        this.emit('error', error);
+      }
+    },
+  });
+  return readable;
+}
+
 const tlg = async (req: any, res: any) => {
   const handleUpdate = async (update: TelegramBot.CustomUpdate) => {
+
     const preprocessing = await middleware(update);
     const { userData } = update;
     console.log(`preprocessing: ${preprocessing}`);
@@ -522,7 +545,9 @@ You have access to:
         data !== "Basic Plan" &&
         data !== "Pro Plan" &&
         data !== "Business Plan" &&
-        data !== "Meme"
+        data !== "Meme" && 
+        data !== 'Yes' && 
+        data !== 'No' 
       ) {
         await sendMessage(message.chat.id, PROCESSING_BACKGROUND_MESSAGE, {
           reply_to_message_id: messageId,
@@ -557,14 +582,192 @@ You have access to:
           });
         }
       } else if (text && data == "General Question") {
-        await processGeneralQuestion(text, message?.reply_to_message, userId);
-      } else if (text && data == "PDF Question") {
-        await processPdfQuestion(text, message?.reply_to_message, userId);
-      } else if (text && data == "Goal") {
-        await sendMessage(chatId, WORKING_ON_NEW_FEATURES_MESSAGE, {
+        const answer  = await processGeneralQuestion(text, message?.reply_to_message, userId);
+        if (answer) {
+         await sendMessage(chatId, answer, {
           reply_to_message_id: messageId,
         });
-      } else if (text && data == "Meme") {
+        } else {
+          await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
+            reply_to_message_id: messageId,
+          });
+        }
+       
+      } else if (text && data == 'Ask Andrew Tate') {
+          await handleAudioRequest(userId, message?.reply_to_message, text, process.env.ANDREW_TATE_VOICE_ID as string)
+      } else if (text && data == 'Ask Steve Jobs') {
+          await handleAudioRequest(userId, message?.reply_to_message, text, process.env.STEVE_JOBS_VOICE_ID as string)
+      } else if (text && data == 'Ask Ben Shapiro') {
+          await handleAudioRequest(userId, message?.reply_to_message, text, process.env.BEN_SHAPIRO_VOICE_ID as string)
+      } 
+      else if (text && data == "PDF Question") {
+        await processPdfQuestion(text, message?.reply_to_message, userId);
+      } else if (text && data == "Goal") {
+        const tasks = await startGoalAgent({goal: text});
+
+        if (tasks.length === 0) {
+          await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
+            reply_to_message_id: messageId,
+          });
+          return;
+        }
+
+        const taskNames = []
+        const redisTasks:any[] = [{goal: text, nIterations: 0}]
+
+        for (let i =0; i< tasks.length; i++) {
+          const task = tasks[i]
+          taskNames.push(`Task ${i + 1}: ${task}`)
+          redisTasks.push({task, completed: false})
+        }
+
+        const tasksMessage = `
+        🎯 Goal: ${text}
+
+📝 Here's what's in store for you:
+
+${taskNames.join('\n')}
+
+🏁 Ready to embark on this amazing adventure? 😃🙌
+        `
+
+
+        await set(`goal:${userId}`, JSON.stringify(redisTasks))
+
+        await sendMessage(chatId, tasksMessage, {
+          reply_to_message_id: messageId,
+          reply_markup: {
+            inline_keyboard: ['Yes', 'No'].map((option) => {
+              return [
+                {
+                  text: option,
+                  callback_data: option,
+                },
+              ];
+            }
+            ),
+          }
+        })
+      } else if (text && data == 'Yes') {
+        const goals = await safeGetObject(`goal:${userId}`, [])
+        if (goals.length === 0) {
+          await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
+            reply_to_message_id: messageId,
+          });
+          return;
+        }
+        const {goal, nIterations} = goals[0]
+        const tasks = goals.slice(1) as Task[]
+
+        if (nIterations > DEFAULT_MAX_LOOPS_FREE) {
+          await del(`goal:${userId}`)
+          await sendMessage(chatId, `You've exceeded the maximum number of loops for the free plan. Please upgrade to the Pro plan to continue using this feature`, {
+            reply_to_message_id: messageId,
+          })
+          return;
+        }
+
+        const currentTask = tasks.find((task) => !task.completed)
+        if (!currentTask) {
+          await del(`goal:${userId}`)
+          await sendMessage(chatId, `🎉 Congratulations! You've completed your goal! 🎉`, {
+            reply_to_message_id: messageId,
+          })
+          return;
+        }
+
+        const analysis = await analyzeTaskAgent(goal, currentTask.task)
+
+        await sendMessage(chatId, `🏃‍♂️ Currently executing: 📝 Task ${currentTask.task}...`, {
+          reply_to_message_id: messageId,
+        })
+
+        await sendChatAction(chatId, "typing")
+
+        const result = await executeTaskAgent(goal, "English", currentTask.task, analysis)
+
+        if (!result) {
+          await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
+            reply_to_message_id: messageId,
+          });
+          return;
+        }
+
+        await sendMessage(chatId, `
+📝 Task: ${currentTask.task}
+
+✅ Status: Completed! ${result}
+
+👏 Great job! You're making excellent progress! Keep up the momentum! 🚀💫`, {
+          reply_to_message_id: messageId,
+          })
+
+          currentTask.completed = true
+          try {
+            const incompleteTasks = tasks.filter((task) => !task.completed)
+            const completedTasks = tasks.filter((task) => task.completed)
+            const data= {
+              goal,
+              language: "English",
+              tasks: incompleteTasks.map((task) => task.task),
+              lastTask: currentTask.task,
+              result: result,
+              completedTasks: completedTasks.map((task) => task.task),
+            }
+            const newTasks = await createTasksAgent(data)
+            if (newTasks.length === 0 && incompleteTasks.length === 0) {
+              await sendMessage(chatId, `🎉 Congratulations! You've completed your goal! 🎉`, {
+                reply_to_message_id: messageId,
+              });
+              return;
+            }
+
+            console.log(`newTasks: ${newTasks}`)
+            const allTasks = [...tasks, ...newTasks.map((task) => {return {task, completed: false}})]
+            console.log(`allTasks: ${allTasks}`)
+            const redisTasks = [{goal, nIterations: nIterations + 1}, ...allTasks]
+            let message = "";
+            
+            if (newTasks.length > 0) {
+              message += `🔍 Exciting Discovery Alert! 🌟\n
+🎯 During our research journey, we've uncovered some fantastic new tasks that could bring even more value to your exploration! 😃\n\n`
+            }
+
+            message += `📚 Here's the updated list of tasks:
+
+${allTasks.map((task, index) => `${task.completed ? '✅' : '⏳'} Task ${index + 1}: ${task.task}`).join('\n')}
+
+🔥 Would you like to dive deeper and unlock even more insights! 🚀🌠`
+
+            await sendMessage(chatId, message, {
+              reply_to_message_id: messageId,
+              reply_markup: {
+                inline_keyboard: ['Yes', 'No'].map((option) => {
+                  return [
+                    {
+                      text: option,
+                      callback_data: option,
+                    },
+                  ];
+                }
+                ),
+              }
+            })
+            await set(`goal:${userId}`, JSON.stringify(redisTasks))
+          } catch(err) {
+            console.error(err)
+            await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
+              reply_to_message_id: messageId,
+            });
+          }
+
+      } else if (text && data == 'No') {
+        await del(`goal:${userId}`)
+        await sendMessage(chatId, 'No problem! You can always start a new goal just type your objective and select Goal option', {
+          reply_to_message_id: messageId,
+        })
+      }
+      else if (text && data == "Meme") {
         await sendMessage(chatId, MEMES_MESSAGE, {
           reply_to_message_id: messageId,
           reply_markup: {

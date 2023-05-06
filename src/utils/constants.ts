@@ -17,6 +17,7 @@ export const EXCLUDE_LINK_LIST = [
   "youtube",
   "tiktok",
 ];
+export const DEFAULT_MAX_LOOPS_FREE = 5;
 
 export const MAX_TOKENS_COMPLETION = 500;
 
@@ -248,6 +249,12 @@ export const TEXT_GENERATION_MESSAGE = `
 
 🔵 Goal - Set a goal for our AI, and watch it devise a strategy and provide reasoning to achieve it..
 
+🔵 Ask Andrew Tate - Ask Andrew Tate any question you want.
+
+🔵 Ask Steve Jobs - Ask Steve Jobs any question you want.
+
+🔵 Ask Ben Shapiro - Ask Ben Shapiro any question you want.
+
 Please choose one of the above options to continue.
 `;
 
@@ -276,6 +283,18 @@ export const TEXT_GENERATION_OPTIONS = [
     title: "Meme",
     description: "Generate a meme based on your text description.",
   },
+  {
+    title: "Ask Andrew Tate",
+    description: "Ask Andrew Tate any question you want.",
+  },
+  {
+    title: "Ask Steve Jobs",
+    description: "Ask Steve Jobs any question you want.",
+  },
+  {
+    title: "Ask Ben Shapiro",
+    description: "Ask Ben Shapiro any question you want.",
+  }
 ];
 
 export const IMAGE_GENERATION_MESSAGE = `

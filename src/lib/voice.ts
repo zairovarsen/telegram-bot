@@ -1,5 +1,5 @@
 
-import { createReadStream, unlinkSync, writeFileSync } from "fs";
+import { createReadStream } from "fs";
 import { convertToWav, getFileSizeInMb } from "@/utils/convertToWav";
 import { processImagePromptOpenJourney } from "@/lib/image";
 import { TelegramBot } from "@/types";
@@ -19,7 +19,6 @@ export interface VoiceBody {
   userId: number,
   questionType: string,
 }
-
 
 /**
  * Voice message handler
@@ -124,7 +123,12 @@ export const processVoice = async (
          const { text: question } = translationResponse;
    
           if (questionType == 'General Question') {
-            return await processGeneralQuestion(question, message, userId);
+            const answer =  await processGeneralQuestion(question, message, userId);
+            if (answer) {
+              await sendMessage(chatId, answer, {
+                reply_to_message_id: messageId
+              })
+            }
           } else if (questionType == 'PDF Question') {
             return await processPdfQuestion(question, message, userId);
           } else {

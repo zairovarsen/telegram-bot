@@ -23,6 +23,54 @@ export enum ConversionModel {
     OPENJOURNEY = 'OPENJOURNEY',
 }
 
+export interface Task {
+    task: string;
+    completed: boolean;
+}
+
+export interface SearchResult {
+  answerBox?: AnswerBox;
+  knowledgeGraph?: KnowledgeGraph;
+  organic?: OrganicResult[];
+  relatedSearches?: RelatedSearch[];
+  sportsResults?: SportsResults;
+}
+
+interface AnswerBox {
+  title?: string;
+  answer?: string;
+  snippet?: string;
+  link?: string;
+}
+
+interface SportsResults {
+  game_spotlight: string;
+}
+
+interface KnowledgeGraph {
+  title: string;
+  type: string;
+  imageUrl: string;
+  description: string;
+  descriptionLink: string;
+  attributes: object;
+}
+
+interface OrganicResult {
+  title: string;
+  link: string;
+  snippet: string;
+  attributes?: object;
+}
+
+interface RelatedSearch {
+  query: string;
+}
+
+export type Analysis = {
+  action: "reason" | "search";
+  arg: string;
+};
 
 
 export type ConversionModelAllButOpenJourney = Exclude<ConversionModel, ConversionModel.OPENJOURNEY>;

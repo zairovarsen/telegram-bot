@@ -36,8 +36,9 @@ import { backOff } from "exponential-backoff";
 export const processGeneralQuestion = async (
   text: string,
   message: TelegramBot.Message,
-  userId: number
-): Promise<void> => {
+  userId: number,
+  isNotTyping?: boolean
+): Promise<string | undefined> => {
   const userKey = `user:${userId}`;
   const userLockResource = `locks:user:token:${userId}`;
   const {
@@ -82,7 +83,9 @@ export const processGeneralQuestion = async (
         return;
       }
 
-      await sendChatAction(chatId, "typing");
+      if (!isNotTyping) {
+        await sendChatAction(chatId, "typing");
+      }
       const body = getPayload(sanitizedQuestion, "gpt-3.5-turbo");
       const completion = await createCompletion(body);
       if (!completion) {
@@ -127,9 +130,7 @@ export const processGeneralQuestion = async (
 
       const answer =
         completion?.choices[0]?.message?.content || UNANSWERED_QUESTION_MESSAGE;
-      await sendMessage(chatId, answer, {
-        reply_to_message_id: messageId,
-      });
+      return answer;
     } catch (err) {
       console.error(err);
       await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {

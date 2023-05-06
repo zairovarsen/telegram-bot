@@ -72,7 +72,7 @@ export const hgetAll = async (key: string) => {
     return null;
 }
 
-export const hget = async (key: string, field: string): Promise<string | null> => {
+export const hget = async (key: string, field: string): Promise<any | null> => {
     try {
       return await getRedisClient().hget(key, field);
     } catch (e) {

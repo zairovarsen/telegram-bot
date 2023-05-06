@@ -24,6 +24,29 @@ export const sendMessage: TelegramBotMethods["sendMessage"] = async (
   return response.result;
 };
 
+export const sendAudio: TelegramBotMethods["sendAudio"] = async (
+  chatId,
+  audio,
+  options
+) => {
+   const formData = new FormData();
+   formData.append('chat_id', chatId as string);
+   formData.append('audio', new Blob([audio as Buffer], { type: 'audio/mpeg' }), 'audio.mp3');
+   formData.append('reply_to_message_id', options?.reply_to_message_id as any) 
+
+  const message = await fetch(`${baseURL}/sendAudio`, {
+    method: "POST", // *GET, POST, PUT, DELETE, etc.
+    body: formData
+  });
+
+   if (!message.ok) {
+      throw new Error(`HTTP error: ${message.status}`);
+    }
+
+  const response = await message.json();
+  return response.result;
+};
+
 export const sendInvoice: TelegramBotMethods["sendInvoice"] = async (
   chatId,
   title,

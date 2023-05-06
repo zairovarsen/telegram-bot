@@ -1,6 +1,6 @@
 import { TelegramBot, UserInfoCache } from "@/types";
 import { AllowedTelegramUsers, INITIAL_IMAGE_GENERATION_COUNT, INITIAL_TOKEN_COUNT } from "@/utils/constants";
-import { hgetAll, hmset } from "@/lib/redis";
+import { del, hgetAll, hmset } from "@/lib/redis";
 import { createNewUser, getUserDataFromDatabase } from "@/lib/supabase";
 
 export const isMe = (update: TelegramBot.CustomUpdate): boolean => {
@@ -73,6 +73,11 @@ export const middleware = async (update: TelegramBot.CustomUpdate): Promise<bool
     const {id: user_id, first_name, last_name} = user;
     const key = `user:${user_id}`;
     let userDataCache = await getUserData(key);
+
+    // remove goals from cache if user doesn't press yes 
+    if (!update.callback_query || update.callback_query.data !== 'Yes' && update.callback_query.data !== 'No') {
+        await del(`goal:${user_id}`)
+    }
 
     if (!userDataCache || Object.keys(userDataCache).length === 0) {
         let userDataFromDB = await getUserDataFromDatabase(user_id);
