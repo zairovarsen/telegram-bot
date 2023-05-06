@@ -67,6 +67,8 @@ export const processAudio = async (
           }),
         })
 
+    console.log(`Eleven Labs Response: ${response.status}`)
+
     const arrayBuffer = await response.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
 

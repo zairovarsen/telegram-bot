@@ -19,7 +19,6 @@ export async function handler(
 
   try {
     const { message, userId, question, voiceId } = body as AudioBody;
-    console.log(body)
     await processAudio(message, userId, question, voiceId);
     
      const endTime = performance.now();
