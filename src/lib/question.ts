@@ -1,285 +1,169 @@
-import { TelegramBot } from "@/types";
-import { getRedisClient, hget, lock } from "@/lib/redis";
-import {
-  createCompletion,
-  createEmbedding,
-  createModeration,
-  getPayload,
-} from "@/lib/openai";
+import { TelegramBot } from '@/types'
+import { hget, lock } from '@/lib/redis'
+import { createEmbedding } from '@/lib/openai'
 import {
   CONTEXT_TOKENS_CUTOFF,
-  INSUFFICIENT_TOKENS_MESSAGE,
   INTERNAL_SERVER_ERROR_MESSAGE,
-  MODERATION_ERROR_MESSAGE,
+  MAX_TOKENS_COMPLETION,
   UNANSWERED_QUESTION_MESSAGE,
-  UNANSWERED_QUESTION_MESSAGE_PDF,
-} from "@/utils/constants";
-import { sendChatAction, sendMessage } from "@/lib/bot";
+} from '@/utils/constants'
+import { sendChatAction, sendMessage } from '@/lib/bot'
+import { matchDocuments } from '@/lib/supabase'
+import { CreateEmbeddingResponse } from 'openai'
+import { backOff } from 'exponential-backoff'
 import {
-  calculateWhisperTokens,
-  estimateEmbeddingTokens,
-  estimateTotalCompletionTokens,
-} from "@/utils/tokenizer";
-import { matchDocuments, updateUserTokens } from "@/lib/supabase";
-import { CreateEmbeddingResponse } from "openai";
-import { backOff } from "exponential-backoff";
+  handleError,
+  handleInsufficientTokens,
+  updateUserTokensInRedisAndDb,
+} from '@/utils/handlers'
+import { llm, moderation } from './langchain'
+
+// Function to get user tokens
+const getUserTokens = async (userKey: string) => {
+  return parseInt((await hget(userKey, 'tokens')) || '0');
+};
+
+// Function to check content moderation
+const checkContent = async (content: string) => {
+  await moderation.call({ input: content, throwError: true });
+};
+
+// Function to get estimated tokens
+const getEstimatedTokens = async (input: string) => {
+  return await llm.getNumTokens(input);
+};
+
+// Function to generate answer
+const generateAnswer = async (input: string) => {
+  return await llm.generate([input]);
+};
+
+const sanitizeInput = (input: string): string => input.replace(/(\r\n|\n|\r)/gm, '');
 
 
-/**
- * Process general question using OpenAI completion API
- *
- * @param text
- * @param message
- * @param userId
- * @returns void
- */
+/* Open AI Completion */
 export const processGeneralQuestion = async (
   text: string,
   message: TelegramBot.Message,
   userId: number,
-  isNotTyping?: boolean
+  isNotTyping?: boolean,
 ): Promise<string | undefined> => {
-  const userKey = `user:${userId}`;
-  const userLockResource = `locks:user:token:${userId}`;
+  const userKey = `user:${userId}`
+  const userLockResource = `locks:user:token:${userId}`
   const {
     chat: { id: chatId },
     message_id: messageId,
-  } = message;
+  } = message
 
   try {
-    let unlock = await lock(userLockResource);
+    let unlock = await lock(userLockResource)
 
     try {
-      const totalTokensRemaining = parseInt(
-        (await hget(userKey, "tokens")) || "0"
-      );
-      console.log(`Total tokens remaining: ${totalTokensRemaining}`);
+      const totalTokensRemaining = await getUserTokens(userKey);
+      const sanitizedQuestion = sanitizeInput(text);
 
-      const sanitizedQuestion = text.replace(/(\r\n|\n|\r)/gm, "");
+      await checkContent(sanitizedQuestion);
+      
+      const estimatedTokensForRequest =  await getEstimatedTokens(sanitizedQuestion);
 
-      const moderationReponse = await createModeration({
-        input: sanitizedQuestion,
-      });
-      console.log(
-        `Moderation response: ${moderationReponse?.results?.[0]?.flagged}`
-      );
-      if (moderationReponse?.results?.[0]?.flagged) {
-        console.error("Question is not allowed");
-        await sendMessage(chatId, MODERATION_ERROR_MESSAGE, {
-          reply_to_message_id: messageId,
-        });
-        return;
-      }
-
-      const estimatedTokensForRequest =
-        estimateTotalCompletionTokens(sanitizedQuestion);
-      console.log(`Estimated tokens for request: ${estimatedTokensForRequest}`);
-
-      if (totalTokensRemaining < estimatedTokensForRequest) {
-        console.error("Insufficient tokens");
-        await sendMessage(chatId, INSUFFICIENT_TOKENS_MESSAGE, {
-          reply_to_message_id: messageId,
-        });
-        return;
-      }
+      await handleInsufficientTokens(totalTokensRemaining, estimatedTokensForRequest);
 
       if (!isNotTyping) {
-        await sendChatAction(chatId, "typing");
-      }
-      const body = getPayload(sanitizedQuestion, "gpt-3.5-turbo");
-      const completion = await createCompletion(body);
-      if (!completion) {
-        console.error("Completion failed");
-        await sendMessage(message.chat.id, INTERNAL_SERVER_ERROR_MESSAGE, {
-          reply_to_message_id: messageId,
-        });
-        return;
+        await sendChatAction(chatId, 'typing')
       }
 
-      const tokensUsed = completion?.usage?.total_tokens || 0;
-      const totalTokensRemainingAfterRequest =
-        totalTokensRemaining - tokensUsed;
-      console.log(
-        `Tokens used total: ${tokensUsed}, prompt tokens: ${completion?.usage?.prompt_tokens}, completion tokens: ${completion?.usage?.completion_tokens}`
-      );
-      console.log(
-        `Tokens remained after request : ${totalTokensRemainingAfterRequest}`
-      );
+      const completion = await generateAnswer(sanitizedQuestion);
 
-      const updateDbTokens = await updateUserTokens(
+      await updateUserTokensInRedisAndDb(
         userId,
-        totalTokensRemainingAfterRequest
-      );
-
-      if (!updateDbTokens) {
-        console.error("Failed to update user tokens , supabase error");
-        await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
-          reply_to_message_id: messageId,
-        });
-        return;
-      }
-
-      const redisMulti = getRedisClient().multi(); // Start a transaction
-      redisMulti.hset(userKey, {
-        tokens:
-          totalTokensRemainingAfterRequest > 0
-            ? totalTokensRemainingAfterRequest
-            : 0,
-      });
-      await redisMulti.exec();
+        totalTokensRemaining,
+        completion?.llmOutput?.tokenUsage.totalTokens || 0,
+      )
 
       const answer =
-        completion?.choices[0]?.message?.content || UNANSWERED_QUESTION_MESSAGE;
-      return answer;
+        completion?.generations[0][0].text || UNANSWERED_QUESTION_MESSAGE
+      return answer
     } catch (err) {
-      console.error(err);
-      await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
-        reply_to_message_id: messageId,
-      });
+      console.log(err);
+      await handleError(chatId, messageId, err)
     } finally {
-      await unlock();
+      await unlock()
     }
   } catch (err) {
-    // Release the lock
-    console.error(err);
-    await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
-      reply_to_message_id: messageId,
-    });
+    await handleError(chatId, messageId, err)
   }
-};
+}
 
-/**
- * Process PDF question using OpenAI completion and embeddings API
- *
- * @param text
- * @param message
- * @param userId
- * @returns
- */
+/* Process PDF question using OpenAI completion and embeddings API */
 export const processPdfQuestion = async (
   text: string,
   message: TelegramBot.Message,
-  userId: number
+  userId: number,
 ): Promise<void> => {
-  const userKey = `user:${userId}`;
-  const userLockResource = `locks:user:token:${userId}`;
+  const userKey = `user:${userId}`
+  const userLockResource = `locks:user:token:${userId}`
   const {
-    chat: { id: chatId }, message_id: messageId,
-  } = message;
+    chat: { id: chatId },
+    message_id: messageId,
+  } = message
 
   try {
-    let unlock = await lock(userLockResource);
+    let unlock = await lock(userLockResource)
     try {
-      const totalTokensRemaining = parseInt(
-        (await hget(userKey, "tokens")) || "0"
-      );
-      console.log(`Total tokens remaining: ${totalTokensRemaining}`);
+      const totalTokensRemaining = await getUserTokens(userKey);
+      const sanitizedQuestion = sanitizeInput(text);
 
-      const sanitizedQuestion = text.replace(/(\r\n|\n|\r)/gm, "");
-      console.log(`Sanitized question: ${sanitizedQuestion}`);
+      await checkContent(sanitizedQuestion);
+      await sendChatAction(chatId, 'typing')
 
-      const moderationReponse = await createModeration({
-        input: sanitizedQuestion,
-      });
-      if (moderationReponse?.results?.[0]?.flagged) {
-        console.error("Question is not allowed");
-        await sendMessage(chatId, MODERATION_ERROR_MESSAGE, {
-          reply_to_message_id: messageId,
-        });
-        return;
-      }
-
-      const estimatedTokensForEmbeddingsRequest =
-        estimateEmbeddingTokens(sanitizedQuestion);
-      console.log(
-        `Estimated tokens for embeddings request: ${estimatedTokensForEmbeddingsRequest}`
-      );
-
-      if (
-        totalTokensRemaining <
-        estimatedTokensForEmbeddingsRequest + CONTEXT_TOKENS_CUTOFF + 500
-      ) {
-        console.error("Insufficient tokens");
-        sendMessage(chatId, INSUFFICIENT_TOKENS_MESSAGE, {
-          reply_to_message_id: messageId,
-        });
-        return;
-      }
-
-      await sendChatAction(chatId, "typing");
-
-      let embeddingResult: CreateEmbeddingResponse | null = null;
+      let embeddingResult: CreateEmbeddingResponse | null = null
       try {
         // Retry with exponential backoff in case of error. Typically, this is due to too_many_requests
         embeddingResult = await backOff(
           () =>
             createEmbedding({
               input: sanitizedQuestion,
-              model: "text-embedding-ada-002",
+              model: 'text-embedding-ada-002',
             }),
           {
             startingDelay: 100000,
             numOfAttempts: 10,
-          }
-        );
+          },
+        )
       } catch (error) {
-        console.error(`Embedding creation error: `, error);
+        console.error(`Embedding creation error: `, error)
       }
 
       const totalTokensUsedForEmbeddingsRequest =
-        embeddingResult?.usage?.total_tokens || 0;
-      const promptEmbedding = embeddingResult?.data?.[0]?.embedding;
+        embeddingResult?.usage?.total_tokens || 0
+      const promptEmbedding = embeddingResult?.data?.[0]?.embedding
 
       if (!promptEmbedding) {
-        console.error("Embedding failed");
-        sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
-          reply_to_message_id: messageId,
-        });
-        return;
+        throw new Error(INTERNAL_SERVER_ERROR_MESSAGE)
       }
 
-      const documents = await matchDocuments(promptEmbedding);
+      const documents = await matchDocuments(promptEmbedding)
 
       if (!documents) {
-        const remainingTokens =
-          totalTokensRemaining - totalTokensUsedForEmbeddingsRequest;
-        const updateDbTokens = await updateUserTokens(userId, remainingTokens);
-
-        if (!updateDbTokens) {
-          console.error("Failed to update user tokens , supabase error");
-          sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
-            reply_to_message_id: messageId,
-          });
-          return;
-        }
-        const redisMulti = getRedisClient().multi(); // Start a transaction
-        redisMulti.hset(userKey, {
-          tokens: remainingTokens > 0 ? remainingTokens : 0,
-        });
-        await redisMulti.exec();
-        console.error("Supabase query failed for mathcing documents");
-        sendMessage(chatId, UNANSWERED_QUESTION_MESSAGE_PDF, {
-          reply_to_message_id: messageId,
-        });
-        return;
+        throw new Error(INTERNAL_SERVER_ERROR_MESSAGE)
       }
 
-      let tokenCount = 0;
-      let contextText = "";
+      let tokenCount = 0
+      let contextText = ''
 
       // Concat matched documents
       for (let i = 0; i < documents.length; i++) {
-        const document = documents[i];
-        const content = document.content;
-        const url = document.url;
-        tokenCount += document.token_count;
+        const document = documents[i]
+        const content = document.content
+        const url = document.url
+        tokenCount += document.token_count
 
         // Limit context to max 1500 tokens (configurable)
         if (tokenCount > CONTEXT_TOKENS_CUTOFF) {
-          break;
+          break
         }
 
-        contextText += `${content.trim()}\nSOURCE: ${url}\n---\n`;
+        contextText += `${content.trim()}\nSOURCE: ${url}\n---\n`
       }
 
       const prompt = `\
@@ -290,70 +174,42 @@ export const processPdfQuestion = async (
           source URLs include them under a SOURCES heading at the end of your response. Always include all of the relevant source urls
           from the CONTEXT, but never list a URL more than once (ignore trailing forward slashes when comparing for uniqueness). Never include URLs that are not in the CONTEXT sections. Never make up URLs
 
-      CONTEXT:
-      ${contextText}
+          CONTEXT:
+          ${contextText}
 
-      QUESTION: """
-      ${sanitizedQuestion}
-      """`;
+          QUESTION: """
+          ${sanitizedQuestion}
+      """
+      `
 
-      const payload = getPayload(prompt, "gpt-3.5-turbo");
+      const completion = await llm.generate([prompt]);
 
-      const completion = await createCompletion(payload);
-
-      if (!completion) {
-        console.error(`Completion error: `, completion);
-        sendMessage(chatId,INTERNAL_SERVER_ERROR_MESSAGE, {
-          reply_to_message_id: messageId,
-        });
-        return;
-      }
-
-      const totalTokensUsedForCompletionRequest =
-        completion?.usage?.total_tokens || 0;
       const totalTokensUsed =
         totalTokensUsedForEmbeddingsRequest +
-        totalTokensUsedForCompletionRequest;
-      const remainingTokens = totalTokensRemaining - totalTokensUsed;
+        completion?.llmOutput?.tokenUsage.totalTokens || 0
+      await updateUserTokensInRedisAndDb(
+        userId,
+        totalTokensRemaining,
+        totalTokensUsed > totalTokensRemaining ? 0 : totalTokensUsed,
+      )
 
-      const updateDbTokens = await updateUserTokens(userId, remainingTokens);
-
-      if (!updateDbTokens) {
-        console.error("Failed to update user tokens , supabase error");
-        sendMessage(chatId,INTERNAL_SERVER_ERROR_MESSAGE, {
-          reply_to_message_id: messageId,
-        });
-        return;
-      }
-
-      const redisMulti = getRedisClient().multi(); // Start a transaction
-      redisMulti.hset(userKey, {
-        tokens: remainingTokens > 0 ? remainingTokens : 0,
-      });
-      await redisMulti.exec();
-
-      console.log(`Completion: `, JSON.stringify(completion, null, 2));
+      console.log(`Completion `, JSON.stringify(completion, null, 2))
 
       // get a json object from the response
-      await sendMessage(chatId,completion.choices[0].message?.content as string, {
-        reply_to_message_id: messageId,
-      });
+      await sendMessage(
+        chatId,
+        completion?.generations[0][0].text || UNANSWERED_QUESTION_MESSAGE,
+        {
+          reply_to_message_id: messageId,
+        },
+      )
     } catch (err) {
-      console.error(err);
-      sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
-        reply_to_message_id: messageId,
-      });
+      await handleError(chatId, messageId, err)
     } finally {
       // Release the lock
-      await unlock();
+      await unlock()
     }
   } catch (err) {
-    console.error(err);
-    sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
-      reply_to_message_id: messageId,
-    });
+    await handleError(chatId, messageId, err)
   }
-};
-
-
-  
+}

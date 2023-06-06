@@ -1,6 +1,5 @@
-import { Client } from "@upstash/qstash";
-
+import { Client } from '@upstash/qstash'
 
 export const qStash = new Client({
-    token: process.env.QSTASH_TOKEN as string
+  token: process.env.QSTASH_TOKEN as string,
 })

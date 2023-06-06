@@ -20,7 +20,7 @@ import {
   TELEGRAM_IMAGE_SIZE_LIMIT,
   TERMS_AND_CONDITIONS,
   UNABLE_TO_PROCESS_DOCUMENT_MESSAGE,
-} from "@/utils/constants";
+} from '@/utils/constants'
 import {
   WELCOME_MESSAGE,
   TELEGRAM_FILE_SIZE_LIMIT,
@@ -36,101 +36,92 @@ import {
   WORKING_ON_NEW_FEATURES_MESSAGE,
   AUIDO_FILE_EXCEEDS_LIMIT_MESSAGE,
   OPEN_AI_AUDIO_LIMIT,
-} from "@/utils/constants";
+} from '@/utils/constants'
 import {
   checkCompletionsRateLimits,
   checkUserRateLimit,
   getEmbeddingsRateLimitResponse,
   imageGenerationRateLimit,
-} from "@/lib/rate-limit";
-import { bytesToMegabytes } from "@/utils/bytesToMegabytes";
-import { ConversionModel, Task, TelegramBot } from "@/types";
-import { qStash } from "@/lib/qstash";
-import { PdfBody } from "@/lib/pdf";
+} from '@/lib/rate-limit'
+import { bytesToMegabytes } from '@/utils/bytesToMegabytes'
+import { ConversionModel, Task, TelegramBot } from '@/types'
+import { qStash } from '@/lib/qstash'
+import { PdfBody } from '@/lib/pdf'
 import {
   answerPreCheckoutQuery,
   sendChatAction,
   sendInvoice,
   sendMessage,
-} from "@/lib/bot";
-import { middleware } from "@/lib/middleware";
-import { processGeneralQuestion, processPdfQuestion } from "@/lib/question";
+} from '@/lib/bot'
+import { middleware } from '@/lib/middleware'
+import { processGeneralQuestion, processPdfQuestion } from '@/lib/question'
 import {
   createNewPayment,
   getUserDistinctUrls,
   updateImageAndTokensTotal,
-} from "@/lib/supabase";
-import { del, getRedisClient, hget, lock, safeGetObject, set } from "@/lib/redis";
-import { MemeType, processMemeGeneration } from "@/lib/meme";
-import { Readable } from "stream";
-import { handleAudioRequest } from "@/lib/audio";
-import { analyzeTaskAgent, createTasksAgent, executeTaskAgent, startGoalAgent } from "@/lib/agent";
-import { send } from "process";
+} from '@/lib/supabase'
+import {
+  del,
+  getRedisClient,
+  hget,
+  lock,
+  safeGetObject,
+  set,
+} from '@/lib/redis'
+import { MemeType, processMemeGeneration } from '@/lib/meme'
+import { Readable } from 'stream'
+import { handleAudioRequest } from '@/lib/audio'
+import {
+  analyzeTaskAgent,
+  createTasksAgent,
+  executeTaskAgent,
+  startGoalAgent,
+} from '@/lib/agent'
 
 export const config = {
-  runtime: "edge",
-  regions: ["fra1"], // Only execute this function in Frankfurt fra1
-};
-
-function readableStreamToReadable(readableStream: any) {
-  const reader = readableStream.getReader();
-  const readable = new Readable({
-    async read(size) {
-      try {
-        const { done, value } = await reader.read();
-        if (done) {
-          this.push(null);
-        } else {
-          this.push(Buffer.from(value));
-        }
-      } catch (error) {
-        this.emit('error', error);
-      }
-    },
-  });
-  return readable;
+  runtime: 'edge',
+  regions: ['fra1'], // Only execute this function in Frankfurt fra1
 }
 
 const tlg = async (req: any, res: any) => {
   const handleUpdate = async (update: TelegramBot.CustomUpdate) => {
-
-    const preprocessing = await middleware(update);
-    const { userData } = update;
-    console.log(`preprocessing: ${preprocessing}`);
-    if (!preprocessing || !userData) return;
+    const preprocessing = await middleware(update)
+    const { userData } = update
+    console.log(`preprocessing: ${preprocessing}`)
+    if (!preprocessing || !userData) return
 
     if (update.message) {
-      const { message } = update;
-      const { from, chat, message_id } = message;
-      if (!from) return;
-      const { id: userId } = from;
-      const { id: chatId } = chat;
+      const { message } = update
+      const { from, chat, message_id } = message
+      if (!from) return
+      const { id: userId } = from
+      const { id: chatId } = chat
 
       // deals with text messages
       if (message.text) {
-        const { text } = message;
+        const { text } = message
 
-        const rateLimitResult = await checkUserRateLimit(from.id);
+        const rateLimitResult = await checkUserRateLimit(from.id)
         // rate limit exceeded
         if (!rateLimitResult.result.success) {
-          console.error("Rate limit exceeded");
+          console.error('Rate limit exceeded')
           await sendMessage(
             chat.id,
             getEmbeddingsRateLimitResponse(
               rateLimitResult.hours,
-              rateLimitResult.minutes
-            )
-          );
-          return;
+              rateLimitResult.minutes,
+            ),
+          )
+          return
         }
 
-        if (text == "/start") {
-          await sendMessage(chatId, WELCOME_MESSAGE);
-        } else if (text == "/help") {
+        if (text == '/start') {
+          await sendMessage(chatId, WELCOME_MESSAGE)
+        } else if (text == '/help') {
           await sendMessage(chatId, HELP_MESSAGE, {
             reply_to_message_id: message_id,
-          });
-        } else if (text == "/limit") {
+          })
+        } else if (text == '/limit') {
           await sendMessage(
             chatId,
             `🚀 Greetings from InsightAI! 🚀
@@ -144,220 +135,220 @@ You have access to:
 🌟 Let your imagination soar with InsightAI! 🌟`,
             {
               reply_to_message_id: message_id,
-            }
-          );
-        } else if (text == "/dt") {
-          const urls = await getUserDistinctUrls(userId);
+            },
+          )
+        } else if (text == '/dt') {
+          const urls = await getUserDistinctUrls(userId)
           if (!urls) {
             await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
               reply_to_message_id: message_id,
-            });
-            return;
+            })
+            return
           }
           if (urls.length == 0) {
             await sendMessage(chatId, NO_DATASETS_MESSAGE, {
               reply_to_message_id: message_id,
-            });
-            return;
+            })
+            return
           }
-          const message = (urls as string[]).join("\n");
+          const message = (urls as string[]).join('\n')
           await sendMessage(
             chatId,
             "👋 Here's a list of all the PDF files I've processed and trained my model on. 📚💻 \n\n" +
               message,
             {
               reply_to_message_id: message_id,
-            }
-          );
-        } else if (text == "/support") {
+            },
+          )
+        } else if (text == '/support') {
           await sendMessage(chatId, SUPPORT_HELP_MESSAGE, {
             reply_to_message_id: message_id,
-          });
-        } else if (text == "/terms") {
+          })
+        } else if (text == '/terms') {
           await sendMessage(chatId, TERMS_AND_CONDITIONS, {
             reply_to_message_id: message_id,
-          });
-        } else if (text == "/plans") {
+          })
+        } else if (text == '/plans') {
           await sendMessage(chatId, PRICING_PLANS_MESSAGE, {
             reply_to_message_id: message_id,
             reply_markup: {
-              inline_keyboard: PRICING_PLANS.map((plan) => {
+              inline_keyboard: PRICING_PLANS.map(plan => {
                 return [
                   {
                     text: plan.title,
                     callback_data: plan.title,
                   },
-                ];
+                ]
               }),
             },
-          });
+          })
         } else {
           if (text.length < MIN_PROMPT_LENGTH) {
             await sendMessage(chatId, MIN_PROMPT_MESSAGE, {
               reply_to_message_id: message_id,
-            });
-            return;
+            })
+            return
           } else if (text.length > MAX_PROMPT_LENGTH) {
             await sendMessage(chatId, MAX_PROMPT_MESSAGE, {
               reply_to_message_id: message_id,
-            });
-            return;
+            })
+            return
           } else {
             await sendMessage(chatId, TEXT_GENERATION_MESSAGE, {
               reply_to_message_id: message_id,
               reply_markup: {
-                inline_keyboard: TEXT_GENERATION_OPTIONS.map((e) => {
+                inline_keyboard: TEXT_GENERATION_OPTIONS.map(e => {
                   return [
                     {
                       text: e.title,
                       callback_data: e.title,
                     },
-                  ];
+                  ]
                 }),
               },
-            });
+            })
           }
         }
       } else if (message.document) {
-        const { mime_type, file_id, file_size } = message.document;
+        const { mime_type, file_id, file_size } = message.document
 
         if (!file_size) {
           await sendMessage(chatId, UNABLE_TO_PROCESS_DOCUMENT_MESSAGE, {
             reply_to_message_id: message_id,
-          });
-          return;
+          })
+          return
         }
 
         // handle pdf files
-        if (mime_type === "application/pdf") {
+        if (mime_type === 'application/pdf') {
           try {
-            const sizeInMb = bytesToMegabytes(file_size);
+            const sizeInMb = bytesToMegabytes(file_size)
             if (sizeInMb > TELEGRAM_FILE_SIZE_LIMIT) {
               await sendMessage(chatId, FILE_SIZE_EXCEEDED_MESSAGE, {
                 reply_to_message_id: message_id,
-              });
-              return;
+              })
+              return
             }
             await sendMessage(chatId, PROCESSING_BACKGROUND_MESSAGE, {
               reply_to_message_id: message_id,
-            });
+            })
 
             const body: PdfBody = {
               chatId: chatId,
               messageId: message_id,
               fileId: file_id,
               userId,
-            };
+            }
 
             const qStashPublishResponse = await qStash.publishJSON({
               url: `${process.env.QSTASH_URL}/embeddings` as string,
               body,
-            });
+            })
             if (!qStashPublishResponse || !qStashPublishResponse.messageId) {
               await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
                 reply_to_message_id: message_id,
-              });
+              })
             }
-            console.log(`QStash Response: ${qStashPublishResponse.messageId}`);
+            console.log(`QStash Response: ${qStashPublishResponse.messageId}`)
           } catch (err) {
-            console.error(err);
+            console.error(err)
             await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
               reply_to_message_id: message_id,
-            });
+            })
           }
         }
 
         // handle image files
-        else if (mime_type === "image/png" || mime_type === "image/jpeg") {
-          const sizeInMb = bytesToMegabytes(file_size);
+        else if (mime_type === 'image/png' || mime_type === 'image/jpeg') {
+          const sizeInMb = bytesToMegabytes(file_size)
           if (sizeInMb > TELEGRAM_IMAGE_SIZE_LIMIT) {
             await sendMessage(chatId, IMAGE_SIZE_EXCEEDED_MESSAGE, {
               reply_to_message_id: message_id,
-            });
-            return;
+            })
+            return
           }
 
           await sendMessage(chatId, IMAGE_GENERATION_MESSAGE, {
             reply_to_message_id: message_id,
             reply_markup: {
-              inline_keyboard: IMAGE_GENERATION_OPTIONS.map((e) => {
+              inline_keyboard: IMAGE_GENERATION_OPTIONS.map(e => {
                 return [
                   {
                     text: e.title,
                     callback_data: e.title,
                   },
-                ];
+                ]
               }),
             },
-          });
+          })
         } else {
           await sendMessage(chatId, INVALID_FILE_MESSAGE, {
             reply_to_message_id: message_id,
-          });
+          })
         }
       } else if (message.voice) {
-        const { voice } = message as any;
-        const { file_size } = voice;
-        const maxFileSizeInBytes = OPEN_AI_AUDIO_LIMIT * 1024 * 1024;
+        const { voice } = message as any
+        const { file_size } = voice
+        const maxFileSizeInBytes = OPEN_AI_AUDIO_LIMIT * 1024 * 1024
 
         if (file_size > maxFileSizeInBytes) {
           await sendMessage(chatId, AUIDO_FILE_EXCEEDS_LIMIT_MESSAGE, {
             reply_to_message_id: message_id,
-          });
-          return;
+          })
+          return
         }
 
         await sendMessage(chatId, TEXT_GENERATION_MESSAGE, {
           reply_to_message_id: message_id,
           reply_markup: {
-            inline_keyboard: TEXT_GENERATION_OPTIONS.map((e) => {
+            inline_keyboard: TEXT_GENERATION_OPTIONS.map(e => {
               return [
                 {
                   text: e.title,
                   callback_data: e.title,
                 },
-              ];
+              ]
             }),
           },
-        });
+        })
       } else if (message.photo) {
         await sendMessage(chatId, IMAGE_GENERATION_MESSAGE, {
           reply_to_message_id: message_id,
           reply_markup: {
-            inline_keyboard: IMAGE_GENERATION_OPTIONS.map((e) => {
+            inline_keyboard: IMAGE_GENERATION_OPTIONS.map(e => {
               return [
                 {
                   text: e.title,
                   callback_data: e.title,
                 },
-              ];
+              ]
             }),
           },
-        });
+        })
       } else if (message.successful_payment) {
-        const userKey = `user:${userId}`;
-        const userImageLockResource = `locks:user:image:${from.id}`;
-        const userPdfLockResoruce = `locks:user:token:${from.id}`;
+        const userKey = `user:${userId}`
+        const userImageLockResource = `locks:user:image:${from.id}`
+        const userPdfLockResoruce = `locks:user:token:${from.id}`
         try {
-          let unlockImage = await lock(userImageLockResource);
-          let unlockPdf = await lock(userPdfLockResoruce);
+          let unlockImage = await lock(userImageLockResource)
+          let unlockPdf = await lock(userPdfLockResoruce)
           const {
             total_amount,
             currency,
             invoice_payload,
             telegram_payment_charge_id,
             provider_payment_charge_id,
-          } = message.successful_payment;
-          const decimalAmount = total_amount / 100;
+          } = message.successful_payment
+          const decimalAmount = total_amount / 100
 
           const purchased_image_generations =
-            total_amount == 999 ? 10 : total_amount == 2499 ? 30 : 80;
+            total_amount == 999 ? 10 : total_amount == 2499 ? 30 : 80
           const purchased_tokens =
             total_amount == 999
               ? 70000
               : total_amount == 2499
               ? 350000
-              : 1500000;
+              : 1500000
 
           try {
             const paymentCreationResult = await createNewPayment({
@@ -368,43 +359,43 @@ You have access to:
               purchased_tokens,
               provider_payment_charge_id,
               telegram_payment_charge_id,
-              payment_method: "Credit Card",
-              payment_status: "Paid",
-            });
+              payment_method: 'Credit Card',
+              payment_status: 'Paid',
+            })
 
             if (!paymentCreationResult) {
-              console.error("Payment unsuccessfully stored in db");
-              console.error("Payment details: ", message.successful_payment);
+              console.error('Payment unsuccessfully stored in db')
+              console.error('Payment details: ', message.successful_payment)
               await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
                 reply_to_message_id: message_id,
-              });
-              return;
+              })
+              return
             }
 
             const userUpdateResult = await updateImageAndTokensTotal(
               from.id,
               purchased_image_generations,
-              purchased_tokens
-            );
+              purchased_tokens,
+            )
 
             if (!userUpdateResult) {
-              console.error("User unsuccessfully updated in db");
-              console.error("Payment details: ", message.successful_payment);
+              console.error('User unsuccessfully updated in db')
+              console.error('Payment details: ', message.successful_payment)
               await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
                 reply_to_message_id: message_id,
-              });
-              return;
+              })
+              return
             }
 
-            const redisMulti = getRedisClient().multi(); // Start a transaction
+            const redisMulti = getRedisClient().multi() // Start a transaction
             redisMulti
-              .hincrby(userKey, "tokens", purchased_tokens)
+              .hincrby(userKey, 'tokens', purchased_tokens)
               .hincrby(
                 userKey,
-                "image_generations_remaining",
-                purchased_image_generations
-              );
-            await redisMulti.exec(); // Execute the transaction
+                'image_generations_remaining',
+                purchased_image_generations,
+              )
+            await redisMulti.exec() // Execute the transaction
 
             await sendMessage(
               chatId,
@@ -417,42 +408,42 @@ You have access to:
   Learn more about your current limit at /limit. Thank you for choosing us, and we wish you a fantastic journey ahead! 😊🌟`,
               {
                 reply_to_message_id: message_id,
-              }
-            );
+              },
+            )
           } catch (error) {
-            console.error(error);
-            console.error("Payment details: ", message.successful_payment);
+            console.error(error)
+            console.error('Payment details: ', message.successful_payment)
             await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
               reply_to_message_id: message_id,
-            });
+            })
           } finally {
-            await unlockImage();
-            await unlockPdf();
+            await unlockImage()
+            await unlockPdf()
           }
         } catch (error) {
-          console.error(error);
-          console.error("Payment details: ", message.successful_payment);
+          console.error(error)
+          console.error('Payment details: ', message.successful_payment)
           await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
             reply_to_message_id: message_id,
-          });
+          })
         }
       } else {
         await sendMessage(chatId, INVALID_MESSAGE_TYPE_MESSAGE, {
           reply_to_message_id: message_id,
-        });
+        })
       }
     }
     // deals with callback queries
     else if (update.callback_query) {
-      const { callback_query } = update;
+      const { callback_query } = update
       const {
         id,
         data,
         message,
         from: { id: userId },
-      } = callback_query;
+      } = callback_query
       if (!message || !message.reply_to_message || !data) {
-        return;
+        return
       }
 
       const {
@@ -460,165 +451,185 @@ You have access to:
         voice,
         message_id: messageId,
         chat: { id: chatId },
-      } = message.reply_to_message;
+      } = message.reply_to_message
 
-      const rateLimitResult = await checkUserRateLimit(userId);
+      const rateLimitResult = await checkUserRateLimit(userId)
       // rate limit exceeded
       if (!rateLimitResult.result.success) {
-        console.error("Rate limit exceeded");
+        console.error('Rate limit exceeded')
         await sendMessage(
           message.chat.id,
           getEmbeddingsRateLimitResponse(
             rateLimitResult.hours,
-            rateLimitResult.minutes
-          )
-        );
-        return;
+            rateLimitResult.minutes,
+          ),
+        )
+        return
       }
 
       if (
-        data == "Room" ||
-        data == "Restore" ||
-        data == "Scribble" ||
-        data == "Imagine"
+        data == 'Room' ||
+        data == 'Restore' ||
+        data == 'Scribble' ||
+        data == 'Imagine'
       ) {
         if (userData.image_generations_remaining <= 0) {
           await sendMessage(chatId, INSUFFICEINT_IMAGE_GENERATIONS_MESSAGE, {
             reply_to_message_id: messageId,
-          });
-          return;
+          })
+          return
         }
 
-        const rateLimitResult = await imageGenerationRateLimit(userId);
+        const rateLimitResult = await imageGenerationRateLimit(userId)
 
         if (!rateLimitResult.result.success) {
-          console.error("Rate limit exceeded");
+          console.error('Rate limit exceeded')
           await sendMessage(
             chatId,
             getEmbeddingsRateLimitResponse(
               rateLimitResult.hours,
               rateLimitResult.minutes,
-              rateLimitResult.seconds
+              rateLimitResult.seconds,
             ),
             {
               reply_to_message_id: messageId,
-            }
-          );
-          return;
+            },
+          )
+          return
         }
       }
 
       // // check for rate limits for completions and and that the amount left is greater than 0
       if (
-        data == "General Question" ||
-        data == "PDF Question" ||
-        data == "Voice" ||
-        data == "Meme"
+        data == 'General Question' ||
+        data == 'PDF Question' ||
+        data == 'Voice' ||
+        data == 'Meme'
       ) {
         if (userData.tokens <= 0) {
           await sendMessage(chatId, INSUFFICIENT_TOKENS_MESSAGE, {
             reply_to_message_id: messageId,
-          });
-          return;
+          })
+          return
         }
 
-        const rateLimitResult = await checkCompletionsRateLimits(userId);
+        const rateLimitResult = await checkCompletionsRateLimits(userId)
 
         if (!rateLimitResult.result.success) {
-          console.error("Rate limit exceeded");
+          console.error('Rate limit exceeded')
           await sendMessage(
             chatId,
             getEmbeddingsRateLimitResponse(
               rateLimitResult.hours,
               rateLimitResult.minutes,
-              rateLimitResult.seconds
+              rateLimitResult.seconds,
             ),
             {
               reply_to_message_id: messageId,
-            }
-          );
-          return;
+            },
+          )
+          return
         }
       }
 
       if (
-        data !== "Basic Plan" &&
-        data !== "Pro Plan" &&
-        data !== "Business Plan" &&
-        data !== "Meme" && 
-        data !== 'Yes' && 
-        data !== 'No' 
+        data !== 'Basic Plan' &&
+        data !== 'Pro Plan' &&
+        data !== 'Business Plan' &&
+        data !== 'Meme' &&
+        data !== 'Yes' &&
+        data !== 'No'
       ) {
         await sendMessage(message.chat.id, PROCESSING_BACKGROUND_MESSAGE, {
           reply_to_message_id: messageId,
-        });
+        })
       }
 
       if (
         voice &&
-        (data == "General Question" || data == "PDF Question" || data == "Goal" || data == 'Imagine')
+        (data == 'General Question' ||
+          data == 'PDF Question' ||
+          data == 'Goal' ||
+          data == 'Imagine')
       ) {
         try {
           const body = {
             message: message.reply_to_message,
             userId,
             questionType: data,
-          };
+          }
 
           const qStashPublishResponse = await qStash.publishJSON({
             url: `${process.env.QSTASH_URL}/voice` as string,
             body,
-          });
+          })
           if (!qStashPublishResponse || !qStashPublishResponse.messageId) {
             await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
               reply_to_message_id: messageId,
-            });
+            })
           }
-          console.log(`QStash Response: ${qStashPublishResponse.messageId}`);
+          console.log(`QStash Response: ${qStashPublishResponse.messageId}`)
         } catch (err) {
-          console.error(err);
+          console.error(err)
           await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
             reply_to_message_id: messageId,
-          });
+          })
         }
-      } else if (text && data == "General Question") {
-        const answer  = await processGeneralQuestion(text, message?.reply_to_message, userId);
+      } else if (text && data == 'General Question') {
+        const answer = await processGeneralQuestion(
+          text,
+          message?.reply_to_message,
+          userId,
+        )
         if (answer) {
-         await sendMessage(chatId, answer, {
-          reply_to_message_id: messageId,
-        });
+          await sendMessage(chatId, answer, {
+            reply_to_message_id: messageId,
+          })
         } else {
           await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
             reply_to_message_id: messageId,
-          });
+          })
         }
-       
       } else if (text && data == 'Ask Andrew Tate') {
-          await handleAudioRequest(userId, message?.reply_to_message, text, process.env.ANDREW_TATE_VOICE_ID as string)
+        await handleAudioRequest(
+          userId,
+          message?.reply_to_message,
+          text,
+          process.env.ANDREW_TATE_VOICE_ID as string,
+        )
       } else if (text && data == 'Ask Steve Jobs') {
-          await handleAudioRequest(userId, message?.reply_to_message, text, process.env.STEVE_JOBS_VOICE_ID as string)
+        await handleAudioRequest(
+          userId,
+          message?.reply_to_message,
+          text,
+          process.env.STEVE_JOBS_VOICE_ID as string,
+        )
       } else if (text && data == 'Ask Ben Shapiro') {
-          await handleAudioRequest(userId, message?.reply_to_message, text, process.env.BEN_SHAPIRO_VOICE_ID as string)
-      } 
-      else if (text && data == "PDF Question") {
-        await processPdfQuestion(text, message?.reply_to_message, userId);
-      } else if (text && data == "Goal") {
-        const tasks = await startGoalAgent({goal: text});
+        await handleAudioRequest(
+          userId,
+          message?.reply_to_message,
+          text,
+          process.env.BEN_SHAPIRO_VOICE_ID as string,
+        )
+      } else if (text && data == 'PDF Question') {
+        await processPdfQuestion(text, message?.reply_to_message, userId)
+      } else if (text && data == 'Goal') {
+        const tasks = await startGoalAgent({ goal: text })
 
         if (tasks.length === 0) {
           await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
             reply_to_message_id: messageId,
-          });
-          return;
+          })
+          return
         }
 
         const taskNames = []
-        const redisTasks:any[] = [{goal: text, nIterations: 0}]
+        const redisTasks: any[] = [{ goal: text, nIterations: 0 }]
 
-        for (let i =0; i< tasks.length; i++) {
+        for (let i = 0; i < tasks.length; i++) {
           const task = tasks[i]
           taskNames.push(`Task ${i + 1}: ${task}`)
-          redisTasks.push({task, completed: false})
+          redisTasks.push({ task, completed: false })
         }
 
         const tasksMessage = `
@@ -631,303 +642,345 @@ ${taskNames.join('\n')}
 🏁 Ready to embark on this amazing adventure? 😃🙌
         `
 
-
         await set(`goal:${userId}`, JSON.stringify(redisTasks))
 
         await sendMessage(chatId, tasksMessage, {
           reply_to_message_id: messageId,
           reply_markup: {
-            inline_keyboard: ['Yes', 'No'].map((option) => {
+            inline_keyboard: ['Yes', 'No'].map(option => {
               return [
                 {
                   text: option,
                   callback_data: option,
                 },
-              ];
-            }
-            ),
-          }
+              ]
+            }),
+          },
         })
       } else if (text && data == 'Yes') {
         const goals = await safeGetObject(`goal:${userId}`, [])
         if (goals.length === 0) {
           await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
             reply_to_message_id: messageId,
-          });
-          return;
+          })
+          return
         }
-        const {goal, nIterations} = goals[0]
+        const { goal, nIterations } = goals[0]
         const tasks = goals.slice(1) as Task[]
 
         if (nIterations > DEFAULT_MAX_LOOPS_FREE) {
           await del(`goal:${userId}`)
-          await sendMessage(chatId, `You've exceeded the maximum number of loops for the free plan. Please upgrade to the Pro plan to continue using this feature`, {
-            reply_to_message_id: messageId,
-          })
-          return;
+          await sendMessage(
+            chatId,
+            `You've exceeded the maximum number of loops for the free plan. Please upgrade to the Pro plan to continue using this feature`,
+            {
+              reply_to_message_id: messageId,
+            },
+          )
+          return
         }
 
-        const currentTask = tasks.find((task) => !task.completed)
+        const currentTask = tasks.find(task => !task.completed)
         if (!currentTask) {
           await del(`goal:${userId}`)
-          await sendMessage(chatId, `🎉 Congratulations! You've completed your goal! 🎉`, {
-            reply_to_message_id: messageId,
-          })
-          return;
+          await sendMessage(
+            chatId,
+            `🎉 Congratulations! You've completed your goal! 🎉`,
+            {
+              reply_to_message_id: messageId,
+            },
+          )
+          return
         }
 
         const analysis = await analyzeTaskAgent(goal, currentTask.task)
 
-        await sendMessage(chatId, `🏃‍♂️ Currently executing: 📝 Task ${currentTask.task}...`, {
-          reply_to_message_id: messageId,
-        })
+        await sendMessage(
+          chatId,
+          `🏃‍♂️ Currently executing: 📝 Task ${currentTask.task}...`,
+          {
+            reply_to_message_id: messageId,
+          },
+        )
 
-        await sendChatAction(chatId, "typing")
+        await sendChatAction(chatId, 'typing')
 
-        const result = await executeTaskAgent(goal, "English", currentTask.task, analysis)
+        const result = await executeTaskAgent(
+          goal,
+          'English',
+          currentTask.task,
+          analysis,
+        )
 
         if (!result) {
           await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
             reply_to_message_id: messageId,
-          });
-          return;
+          })
+          return
         }
 
-        await sendMessage(chatId, `
+        await sendMessage(
+          chatId,
+          `
 📝 Task: ${currentTask.task}
 
 ✅ Status: Completed! ${result}
 
-👏 Great job! You're making excellent progress! Keep up the momentum! 🚀💫`, {
-          reply_to_message_id: messageId,
-          })
+👏 Great job! You're making excellent progress! Keep up the momentum! 🚀💫`,
+          {
+            reply_to_message_id: messageId,
+          },
+        )
 
-          currentTask.completed = true
-          try {
-            const incompleteTasks = tasks.filter((task) => !task.completed)
-            const completedTasks = tasks.filter((task) => task.completed)
-            const data= {
-              goal,
-              language: "English",
-              tasks: incompleteTasks.map((task) => task.task),
-              lastTask: currentTask.task,
-              result: result,
-              completedTasks: completedTasks.map((task) => task.task),
-            }
-            const newTasks = await createTasksAgent(data)
-            if (newTasks.length === 0 && incompleteTasks.length === 0) {
-              await sendMessage(chatId, `🎉 Congratulations! You've completed your goal! 🎉`, {
+        currentTask.completed = true
+        try {
+          const incompleteTasks = tasks.filter(task => !task.completed)
+          const completedTasks = tasks.filter(task => task.completed)
+          const data = {
+            goal,
+            language: 'English',
+            tasks: incompleteTasks.map(task => task.task),
+            lastTask: currentTask.task,
+            result: result,
+            completedTasks: completedTasks.map(task => task.task),
+          }
+          const newTasks = await createTasksAgent(data)
+          if (newTasks.length === 0 && incompleteTasks.length === 0) {
+            await sendMessage(
+              chatId,
+              `🎉 Congratulations! You've completed your goal! 🎉`,
+              {
                 reply_to_message_id: messageId,
-              });
-              return;
-            }
+              },
+            )
+            return
+          }
 
-            console.log(`newTasks: ${newTasks}`)
-            const allTasks = [...tasks, ...newTasks.map((task) => {return {task, completed: false}})]
-            console.log(`allTasks: ${allTasks}`)
-            const redisTasks = [{goal, nIterations: nIterations + 1}, ...allTasks]
-            let message = "";
-            
-            if (newTasks.length > 0) {
-              message += `🔍 Exciting Discovery Alert! 🌟\n
+          console.log(`newTasks: ${newTasks}`)
+          const allTasks = [
+            ...tasks,
+            ...newTasks.map(task => {
+              return { task, completed: false }
+            }),
+          ]
+          console.log(`allTasks: ${allTasks}`)
+          const redisTasks = [
+            { goal, nIterations: nIterations + 1 },
+            ...allTasks,
+          ]
+          let message = ''
+
+          if (newTasks.length > 0) {
+            message += `🔍 Exciting Discovery Alert! 🌟\n
 🎯 During our research journey, we've uncovered some fantastic new tasks that could bring even more value to your exploration! 😃\n\n`
-            }
+          }
 
-            message += `📚 Here's the updated list of tasks:
+          message += `📚 Here's the updated list of tasks:
 
-${allTasks.map((task, index) => `${task.completed ? '✅' : '⏳'} Task ${index + 1}: ${task.task}`).join('\n')}
+${allTasks
+  .map(
+    (task, index) =>
+      `${task.completed ? '✅' : '⏳'} Task ${index + 1}: ${task.task}`,
+  )
+  .join('\n')}
 
 🔥 Would you like to dive deeper and unlock even more insights! 🚀🌠`
 
-            await sendMessage(chatId, message, {
-              reply_to_message_id: messageId,
-              reply_markup: {
-                inline_keyboard: ['Yes', 'No'].map((option) => {
-                  return [
-                    {
-                      text: option,
-                      callback_data: option,
-                    },
-                  ];
-                }
-                ),
-              }
-            })
-            await set(`goal:${userId}`, JSON.stringify(redisTasks))
-          } catch(err) {
-            console.error(err)
-            await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
-              reply_to_message_id: messageId,
-            });
-          }
-
+          await sendMessage(chatId, message, {
+            reply_to_message_id: messageId,
+            reply_markup: {
+              inline_keyboard: ['Yes', 'No'].map(option => {
+                return [
+                  {
+                    text: option,
+                    callback_data: option,
+                  },
+                ]
+              }),
+            },
+          })
+          await set(`goal:${userId}`, JSON.stringify(redisTasks))
+        } catch (err) {
+          console.error(err)
+          await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
+            reply_to_message_id: messageId,
+          })
+        }
       } else if (text && data == 'No') {
         await del(`goal:${userId}`)
-        await sendMessage(chatId, 'No problem! You can always start a new goal just type your objective and select Goal option', {
-          reply_to_message_id: messageId,
-        })
-      }
-      else if (text && data == "Meme") {
+        await sendMessage(
+          chatId,
+          'No problem! You can always start a new goal just type your objective and select Goal option',
+          {
+            reply_to_message_id: messageId,
+          },
+        )
+      } else if (text && data == 'Meme') {
         await sendMessage(chatId, MEMES_MESSAGE, {
           reply_to_message_id: messageId,
           reply_markup: {
-            inline_keyboard: MEME_OPTIONS.map((meme) => {
+            inline_keyboard: MEME_OPTIONS.map(meme => {
               return [
                 {
                   text: meme.name,
                   callback_data: meme.name,
                 },
-              ];
+              ]
             }),
           },
-        });
+        })
       } else if (text && MEME_NAMES.includes(data as MemeType)) {
         await processMemeGeneration(
           text,
           data as MemeType,
           message?.reply_to_message,
-          userId
-        );
-      } else if (data == "Room" || data == "Restore" || data == "Scribble" || data == 'Imagine') {
+          userId,
+        )
+      } else if (
+        data == 'Room' ||
+        data == 'Restore' ||
+        data == 'Scribble' ||
+        data == 'Imagine'
+      ) {
         try {
-          let body = {};
+          let body = {}
           if (data !== 'Imagine') {
-          body = {
-            message: message.reply_to_message,
-            userId,
-            conversionModel:
-              data == "Room"
-                ? ConversionModel.CONTROLNET_HOUGH
-                : data == "Scribble"
-                ? ConversionModel.CONTROLNET_SCRIBBLE
-                : ConversionModel.GFPGAN
-          };
-        } else {
-          body = {
-            message: message.reply_to_message,
-            userId,
-            conversionModel: ConversionModel.OPENJOURNEY,
-            text
+            body = {
+              message: message.reply_to_message,
+              userId,
+              conversionModel:
+                data == 'Room'
+                  ? ConversionModel.CONTROLNET_HOUGH
+                  : data == 'Scribble'
+                  ? ConversionModel.CONTROLNET_SCRIBBLE
+                  : ConversionModel.GFPGAN,
+            }
+          } else {
+            body = {
+              message: message.reply_to_message,
+              userId,
+              conversionModel: ConversionModel.OPENJOURNEY,
+              text,
+            }
           }
-        }
 
           const qStashPublishResponse = await qStash.publishJSON({
             url: `${process.env.QSTASH_URL}/image` as string,
             body,
             retries: 0,
-          });
+          })
           if (!qStashPublishResponse || !qStashPublishResponse.messageId) {
             await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
               reply_to_message_id: messageId,
-            });
+            })
           }
-          console.log(`QStash Response: ${qStashPublishResponse.messageId}`);
+          console.log(`QStash Response: ${qStashPublishResponse.messageId}`)
         } catch (err) {
-          console.error(err);
+          console.error(err)
           await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
             reply_to_message_id: messageId,
-          });
+          })
         }
       } else if (
-        data == "Basic Plan" ||
-        data == "Pro Plan" ||
-        data == "Business Plan"
+        data == 'Basic Plan' ||
+        data == 'Pro Plan' ||
+        data == 'Business Plan'
       ) {
-        const plan = PRICING_PLANS.find((plan) => plan.title == data);
+        const plan = PRICING_PLANS.find(plan => plan.title == data)
 
         if (!plan) {
           await sendMessage(chatId, INVALID_PRICING_PLAN_MESSAGE, {
             reply_to_message_id: messageId,
-          });
-          return;
+          })
+          return
         }
 
-        const { title, description, price } = plan;
+        const { title, description, price } = plan
         await sendInvoice(
           chatId,
           title,
           description,
           title,
           process.env.TELEGRAM_BOT_STRIPE_TOKEN as string,
-          "usd",
+          'usd',
           [{ label: plan.title, amount: plan.price * 100 }],
           {
             reply_to_message_id: messageId,
-          }
-        );
+          },
+        )
       } else {
         await sendMessage(chatId, INVALID_COMMAND_MESSAGE, {
           reply_to_message_id: messageId,
-        });
+        })
       }
     } else if (update.pre_checkout_query) {
-      const { id, total_amount, invoice_payload } = update.pre_checkout_query;
+      const { id, total_amount, invoice_payload } = update.pre_checkout_query
 
       // check if product is valid
       const product = PRICING_PLANS.find(
-        (plan) =>
-          plan.title == invoice_payload && plan.price == total_amount / 100
-      );
+        plan =>
+          plan.title == invoice_payload && plan.price == total_amount / 100,
+      )
       if (!product) {
         await answerPreCheckoutQuery(id, false, {
           error_message: INVALID_PRICING_PLAN_MESSAGE,
-        });
-        return;
+        })
+        return
       }
 
       // TODO: log transcation details
-      await answerPreCheckoutQuery(id, true);
+      await answerPreCheckoutQuery(id, true)
     } else {
       // update that I am not currently supporting
       console.error(
-        `Unsupported update type , update ${JSON.stringify(update)}`
-      );
-      return;
+        `Unsupported update type , update ${JSON.stringify(update)}`,
+      )
+      return
     }
-  };
+  }
 
-  if (req.method === "POST") {
+  if (req.method === 'POST') {
     try {
-      const body = await req.json();
-      await handleUpdate(body);
+      const body = await req.json()
+      await handleUpdate(body)
       return new Response(
         JSON.stringify({
-          status: "ok",
+          status: 'ok',
         }),
         {
           status: 200,
           headers: {
-            "content-type": "application/json",
+            'content-type': 'application/json',
           },
-        }
-      );
+        },
+      )
     } catch (error) {
-      console.error(error);
+      console.error(error)
       return new Response(
         JSON.stringify({
-          error: "Internal Server Error",
+          error: 'Internal Server Error',
         }),
         {
           status: 500,
           headers: {
-            "content-type": "application/json",
+            'content-type': 'application/json',
           },
-        }
-      );
+        },
+      )
     }
   } else {
     return new Response(
       JSON.stringify({
-        error: "Method Not Allowed",
+        error: 'Method Not Allowed',
       }),
       {
         status: 405,
         headers: {
-          "content-type": "application/json",
+          'content-type': 'application/json',
         },
-      }
-    );
+      },
+    )
   }
-};
+}
 
-export default tlg;
+export default tlg

@@ -1,38 +1,38 @@
-import { Database } from "@/types/supabase";
+import { Database } from '@/types/supabase'
 
-import {  createClient } from "@supabase/supabase-js";
+import { createClient } from '@supabase/supabase-js'
 
 interface Client {
-  url?: string;
-  key?: string;
+  url?: string
+  key?: string
 }
 
 const client: Client = {
   url: process.env.NEXT_PUBLIC_SUPABASE_URL,
-  key: process.env.SUPABASE_SERVICE_ROLE
-};
-
-if (!client.url || !client.key) {
-  throw new Error("Missing Supabase credentials");
+  key: process.env.SUPABASE_SERVICE_ROLE,
 }
 
-export const supabaseClient = createClient<Database>(client.url!, client.key!);
+if (!client.url || !client.key) {
+  throw new Error('Missing Supabase credentials')
+}
 
-export type InsertPayment = Database["public"]["Tables"]["payments"]["Insert"];
-export type SelectPayment = Database["public"]["Tables"]["payments"]["Row"];
+export const supabaseClient = createClient<Database>(client.url!, client.key!)
 
-export type InsertUser = Database["public"]["Tables"]["users"]["Insert"];
-export type SelectUser = Database["public"]["Tables"]["users"]["Row"];
+export type InsertPayment = Database['public']['Tables']['payments']['Insert']
+export type SelectPayment = Database['public']['Tables']['payments']['Row']
+
+export type InsertUser = Database['public']['Tables']['users']['Insert']
+export type SelectUser = Database['public']['Tables']['users']['Row']
 
 export type InsertDocuments =
-  Database["public"]["Tables"]["documents"]["Insert"];
-export type SelectDocuments = Database["public"]["Tables"]["documents"]["Row"];
-
+  Database['public']['Tables']['documents']['Insert']
+export type SelectDocuments = Database['public']['Tables']['documents']['Row']
 
 export type MatchDocumentsReturn =
-  Database["public"]["Functions"]["match_documents"]["Returns"];
+  Database['public']['Functions']['match_documents']['Returns']
 
-export type DistinctUrls = Database["public"]["Views"]["distinct_user_file_url"]["Row"]["url"];
+export type DistinctUrls =
+  Database['public']['Views']['distinct_user_file_url']['Row']['url']
 
 /**
  * Get user data from the database
@@ -41,52 +41,52 @@ export type DistinctUrls = Database["public"]["Views"]["distinct_user_file_url"]
  * @returns SelectUser | null
  */
 export const getUserDataFromDatabase = async (
-  user_id: number
+  user_id: number,
 ): Promise<SelectUser | null> => {
   try {
     const { data, error } = await supabaseClient
-      .from("users")
-      .select("*")
-      .eq("user_id", user_id);
+      .from('users')
+      .select('*')
+      .eq('user_id', user_id)
 
     if (error) {
-      console.error(`Error while getting user data: ${error}`);
-      return null;
+      console.error(`Error while getting user data: ${error}`)
+      return null
     } else {
-      return data[0];
+      return data[0]
     }
   } catch (error) {
-    console.error(`Exception occurred while getting user data: ${error}`);
-    return null;
+    console.error(`Exception occurred while getting user data: ${error}`)
+    return null
   }
-};
+}
 
 /**
  * Get user file hashes
  */
 export const checkUserFileHashExist = async (
   user_id: number,
-  hash: string
+  hash: string,
 ): Promise<boolean> => {
   try {
     const { data, error } = await supabaseClient
-      .from("distinct_user_file_hashes")
-      .select("*")
-      .eq("user_id", user_id)
-      .eq("hash", hash)
-      .limit(1);
+      .from('distinct_user_file_hashes')
+      .select('*')
+      .eq('user_id', user_id)
+      .eq('hash', hash)
+      .limit(1)
 
     if (error) {
-      console.error(`Error while checking file hash: ${error}`);
-      return false;
+      console.error(`Error while checking file hash: ${error}`)
+      return false
     } else {
-      return data.length > 0;
+      return data.length > 0
     }
   } catch (error) {
-    console.error(`Exception occurred while checking file hash: ${error}`);
-    return false;
+    console.error(`Exception occurred while checking file hash: ${error}`)
+    return false
   }
-};
+}
 
 /** Create new user in the database
  *
@@ -94,53 +94,55 @@ export const checkUserFileHashExist = async (
  * @returns boolean | null
  */
 export const createNewUser = async (
-  body: InsertUser
+  body: InsertUser,
 ): Promise<SelectUser | null> => {
   try {
     const { data, error } = await supabaseClient
-      .from("users")
+      .from('users')
       .insert([body])
-      .select();
+      .select()
 
     if (error) {
-      console.error(`Error while creating new user: ${error}`);
-      return null;
+      console.error(`Error while creating new user: ${error}`)
+      return null
     } else {
-      return data[0];
+      return data[0]
     }
   } catch (err) {
-    console.error(`Exception occurred while creating new user: ${err}`);
-    return null;
+    console.error(`Exception occurred while creating new user: ${err}`)
+    return null
   }
-};
+}
 
 export const updateImageAndTokensTotal = async (
   user_id: number,
   image_generations_added: number,
-  tokens_added: number
+  tokens_added: number,
 ): Promise<boolean> => {
   try {
-    const { error } = await supabaseClient.rpc("increment_two_fields", {
+    const { error } = await supabaseClient.rpc('increment_two_fields', {
       x1: image_generations_added,
       x2: image_generations_added,
       x3: tokens_added,
       row_id: user_id,
-    });
+    })
     if (error) {
       console.error(
-        `Error while updating user image generations remaining and tokens: ${JSON.stringify(error)}`
-      );
-      return false;
+        `Error while updating user image generations remaining and tokens: ${JSON.stringify(
+          error,
+        )}`,
+      )
+      return false
     } else {
-      return true;
+      return true
     }
   } catch (e) {
     console.error(
-      `Exception occurred while updating user image generations remaining and tokens: ${e}`
-    );
-    return false;
+      `Exception occurred while updating user image generations remaining and tokens: ${e}`,
+    )
+    return false
   }
-};
+}
 
 /**
  * Update user image generations remaining in the database
@@ -151,29 +153,29 @@ export const updateImageAndTokensTotal = async (
  */
 export const updateImageGenerationsRemaining = async (
   user_id: number,
-  image_generations_remaining: number
+  image_generations_remaining: number,
 ): Promise<boolean> => {
   try {
     const { error } = await supabaseClient
-      .from("users")
+      .from('users')
       .update({ image_generations_remaining })
-      .eq("user_id", user_id);
+      .eq('user_id', user_id)
 
     if (error) {
       console.error(
-        `Error while updating user image generations remaining: ${error}`
-      );
-      return false;
+        `Error while updating user image generations remaining: ${error}`,
+      )
+      return false
     } else {
-      return true;
+      return true
     }
   } catch (err) {
     console.error(
-      `Exception occurred while updating user image generations remaining: ${err}`
-    );
-    return false;
+      `Exception occurred while updating user image generations remaining: ${err}`,
+    )
+    return false
   }
-};
+}
 
 /**
  * Update user token count in the database
@@ -184,25 +186,25 @@ export const updateImageGenerationsRemaining = async (
  */
 export const updateUserTokens = async (
   user_id: number,
-  tokens: number
+  tokens: number,
 ): Promise<boolean> => {
   try {
     const { error } = await supabaseClient
-      .from("users")
+      .from('users')
       .update({ tokens })
-      .eq("user_id", user_id);
+      .eq('user_id', user_id)
 
     if (error) {
-      console.error(`Error while updating user token count: ${error}`);
-      return false;
+      console.error(`Error while updating user token count: ${error}`)
+      return false
     } else {
-      return true;
+      return true
     }
   } catch (err) {
-    console.error(`Exception occurred while updating user token count: ${err}`);
-    return false;
+    console.error(`Exception occurred while updating user token count: ${err}`)
+    return false
   }
-};
+}
 
 /** Create new documents in the database in batch
  *
@@ -210,21 +212,23 @@ export const updateUserTokens = async (
  * @returns boolean
  */
 export const createDocumentsBatch = async (
-  body: InsertDocuments[]
+  body: InsertDocuments[],
 ): Promise<boolean> => {
   try {
-    const { error } = await supabaseClient.from("documents").insert(body);
+    const { error } = await supabaseClient.from('documents').insert(body)
     if (error) {
-      console.error(`Error while creating documents batch: ${JSON.stringify(error)} `);
-      return false;
+      console.error(
+        `Error while creating documents batch: ${JSON.stringify(error)} `,
+      )
+      return false
     } else {
-      return true;
+      return true
     }
   } catch (err) {
-    console.error(`Exception occurred while creating documents batch: ${err}`);
-    return false;
+    console.error(`Exception occurred while creating documents batch: ${err}`)
+    return false
   }
-};
+}
 
 /** Create new documents in the database in single
  *
@@ -232,21 +236,23 @@ export const createDocumentsBatch = async (
  * @returns boolean
  */
 export const createDocumentsSingle = async (
-  body: InsertDocuments
+  body: InsertDocuments,
 ): Promise<boolean> => {
   try {
-    const { error } = await supabaseClient.from("documents").insert([body]);
+    const { error } = await supabaseClient.from('documents').insert([body])
     if (error) {
-      console.error(`Error while creating documents single: ${JSON.stringify(error)}`);
-      return false;
+      console.error(
+        `Error while creating documents single: ${JSON.stringify(error)}`,
+      )
+      return false
     } else {
-      return true;
+      return true
     }
   } catch (err) {
-    console.error(`Exception occurred while creating documents: ${err}`);
-    return false;
+    console.error(`Exception occurred while creating documents: ${err}`)
+    return false
   }
-};
+}
 
 /**
  * Creta new payment in the database
@@ -276,23 +282,23 @@ export const createNewPayment = async ({
       telegram_payment_charge_id,
       payment_method,
       payment_status,
-    };
+    }
 
     const { data, error } = await supabaseClient
-      .from("payments")
-      .insert([newPayment]);
+      .from('payments')
+      .insert([newPayment])
 
     if (error) {
-      console.error(`Error while adding new payment: ${error}`);
-      return false;
+      console.error(`Error while adding new payment: ${error}`)
+      return false
     } else {
-      return true;
+      return true
     }
   } catch (err) {
-    console.error(`Exception occurred while adding new payment: ${err}`);
-    return false;
+    console.error(`Exception occurred while adding new payment: ${err}`)
+    return false
   }
-};
+}
 
 /**
  * Upload file to Supabase storage
@@ -300,87 +306,85 @@ export const createNewPayment = async ({
  * @returns string | null
  */
 export const uploadFileToSupabaseStorage = async (
-  file: Buffer
+  file: Buffer,
 ): Promise<string | null> => {
   try {
-    const bucketName = "user-files";
-    const fileName = `pdf/${Date.now()}.pdf`;
+    const bucketName = 'user-files'
+    const fileName = `pdf/${Date.now()}.pdf`
 
     const { error } = await supabaseClient.storage
       .from(bucketName)
       .upload(fileName, file, {
-        contentType: "application/pdf",
+        contentType: 'application/pdf',
         upsert: false,
-      });
+      })
 
     if (error) {
       console.error(
-        `Error while uploading file to Supabase storage: ${error.message}`
-      );
-      return null;
+        `Error while uploading file to Supabase storage: ${error.message}`,
+      )
+      return null
     } else {
-      return `https://osvtgvfbqnfwkwhrdmek.supabase.co/storage/v1/object/public/user-files/${fileName}`;
+      return `https://osvtgvfbqnfwkwhrdmek.supabase.co/storage/v1/object/public/user-files/${fileName}`
     }
   } catch (err) {
     console.error(
-      `Exception occurred while uploading file to Supabase storage: ${err}`
-    );
-    return null;
+      `Exception occurred while uploading file to Supabase storage: ${err}`,
+    )
+    return null
   }
-};
+}
 
 /**
  * Match supabase document embeddings with the given embeddings cosine similarity
  */
 export const matchDocuments = async (
-  embeddings: unknown
+  embeddings: unknown,
 ): Promise<MatchDocumentsReturn | null> => {
   try {
     const { data: documents, error } = await supabaseClient.rpc(
-      "match_documents",
+      'match_documents',
       {
         query_embedding: embeddings as string,
         similarity_threshold: 0.1,
         match_count: 10,
-      }
-    );
+      },
+    )
     if (error) {
-      console.error(`Error while matching documents: ${JSON.stringify(error)}`);
-      return null;
+      console.error(`Error while matching documents: ${JSON.stringify(error)}`)
+      return null
     }
     if (!documents || documents.length === 0) {
-      console.error(`No documents found`);
-      return null;
+      console.error(`No documents found`)
+      return null
     }
-    return documents;
+    return documents
   } catch (err) {
-    console.error(`Exception occurred while matching documents: ${err}`);
-    return null;
+    console.error(`Exception occurred while matching documents: ${err}`)
+    return null
   }
-};
-
+}
 
 export const getUserDistinctUrls = async (
-  user_id: number
+  user_id: number,
 ): Promise<string[] | null> => {
   try {
     const { data: urls, error } = await supabaseClient
-      .from("distinct_user_file_url")
-      .select("*")
-      .eq("user_id", user_id)
+      .from('distinct_user_file_url')
+      .select('*')
+      .eq('user_id', user_id)
 
     if (error) {
-      console.error(`Error while getting user distinct urls: ${error}`);
-      return null;
-    } 
-    else {
+      console.error(`Error while getting user distinct urls: ${error}`)
+      return null
+    } else {
       if (!urls || urls.length === 0) {
-        return [];
+        return []
       }
-      return urls.map((url) => url.url || '');
+      return urls.map(url => url.url || '')
     }
   } catch (err) {
-    console.error(`Exception occurred while getting user distinct urls: ${err}`);
-    return null;
+    console.error(`Exception occurred while getting user distinct urls: ${err}`)
+    return null
   }
 }
