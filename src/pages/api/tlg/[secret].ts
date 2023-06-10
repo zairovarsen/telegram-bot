@@ -19,6 +19,7 @@ import {
   SUPPORT_HELP_MESSAGE,
   TELEGRAM_IMAGE_SIZE_LIMIT,
   TERMS_AND_CONDITIONS,
+  TEXT_VOICE_MESSAGE,
   UNABLE_TO_PROCESS_DOCUMENT_MESSAGE,
 } from '@/utils/constants'
 import {
@@ -33,7 +34,6 @@ import {
   MIN_PROMPT_MESSAGE,
   MAX_PROMPT_LENGTH,
   MAX_PROMPT_MESSAGE,
-  WORKING_ON_NEW_FEATURES_MESSAGE,
   AUIDO_FILE_EXCEEDS_LIMIT_MESSAGE,
   OPEN_AI_AUDIO_LIMIT,
 } from '@/utils/constants'
@@ -298,10 +298,10 @@ You have access to:
           return
         }
 
-        await sendMessage(chatId, TEXT_GENERATION_MESSAGE, {
+        await sendMessage(chatId, TEXT_VOICE_MESSAGE, {
           reply_to_message_id: message_id,
           reply_markup: {
-            inline_keyboard: TEXT_GENERATION_OPTIONS.map(e => {
+            inline_keyboard: TEXT_GENERATION_OPTIONS.filter(e => (e.title != 'Goal' && e.title != 'Meme')).map(e => {
               return [
                 {
                   text: e.title,
@@ -550,7 +550,9 @@ You have access to:
         (data == 'General Question' ||
           data == 'PDF Question' ||
           data == 'Goal' ||
-          data == 'Imagine')
+          data == 'Imagine' || 
+          data == 'Ask Steve Jobs' || 
+          data == 'Ask Ben Shapiro')
       ) {
         try {
           const body = {
@@ -590,14 +592,7 @@ You have access to:
             reply_to_message_id: messageId,
           })
         }
-      } else if (text && data == 'Ask Andrew Tate') {
-        await handleAudioRequest(
-          userId,
-          message?.reply_to_message,
-          text,
-          process.env.ANDREW_TATE_VOICE_ID as string,
-        )
-      } else if (text && data == 'Ask Steve Jobs') {
+      }  else if (text && data == 'Ask Steve Jobs') {
         await handleAudioRequest(
           userId,
           message?.reply_to_message,

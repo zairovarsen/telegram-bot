@@ -1,4 +1,4 @@
-import { TelegramBot, TelegramBotMethods } from '@/types'
+import { TelegramBotMethods } from '@/types'
 
 export const baseURL = `https://api.telegram.org/bot${process.env.NEXT_PUBLIC_TELEGRAM_TOKEN}`
 

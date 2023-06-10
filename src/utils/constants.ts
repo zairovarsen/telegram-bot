@@ -241,6 +241,22 @@ export const PROCESSING_BACKGROUND_MESSAGE = `
 We'll notify you as soon as the results are ready. 😊
 `
 
+export const TEXT_VOICE_MESSAGE = `
+🌟 Our InsightAI bot can help you with the following tasks: 🌟
+
+🔵 Imagine - Let Open Journey create a stunning image based on your text description.
+
+🔵 PDF Question - Get answers to any question based on the documents you uploaded.
+
+🔵 General Question - Get answers to any question you have, utilizing our advanced AI technology..
+
+🔵 Ask Steve Jobs - Ask Steve Jobs any question you want.
+
+🔵 Ask Ben Shapiro - Ask Ben Shapiro any question you want.
+
+Please choose one of the above options to continue.
+`
+
 export const TEXT_GENERATION_MESSAGE = `
 🌟 Our InsightAI bot can help you with the following tasks: 🌟
 
@@ -253,8 +269,6 @@ export const TEXT_GENERATION_MESSAGE = `
 🔵 Meme - Generate a meme based on your text description.
 
 🔵 Goal - Set a goal for our AI, and watch it devise a strategy and provide reasoning to achieve it..
-
-🔵 Ask Andrew Tate - Ask Andrew Tate any question you want.
 
 🔵 Ask Steve Jobs - Ask Steve Jobs any question you want.
 
@@ -287,10 +301,6 @@ export const TEXT_GENERATION_OPTIONS = [
   {
     title: 'Meme',
     description: 'Generate a meme based on your text description.',
-  },
-  {
-    title: 'Ask Andrew Tate',
-    description: 'Ask Andrew Tate any question you want.',
   },
   {
     title: 'Ask Steve Jobs',

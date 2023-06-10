@@ -19,6 +19,7 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 import { handleError } from '@/utils/handlers'
+import { handleAudioRequest } from './audio'
 
 export interface VoiceBody {
   message: TelegramBot.Message
@@ -41,7 +42,22 @@ const handleQuestionType = async (
     }
   } else if (questionType == 'PDF Question') {
     return await processPdfQuestion(question, message, userId)
-  } else {
+  } else if (questionType == 'Ask Steve Jobs') {
+    await handleAudioRequest(
+      userId,
+      message,
+      question,
+      process.env.STEVE_JOBS_VOICE_ID as string,
+    )
+  } else if (questionType == 'Ask Ben Shapiro') {
+    await handleAudioRequest(
+      userId,
+      message,
+      question,
+      process.env.BEN_SHAPIRO_VOICE_ID as string,
+    )
+  }
+   else {
     const result = await processImagePromptOpenJourney(question, userId)
     if (result.success) {
       await sendDocument(chatId, result.fileUrl, {

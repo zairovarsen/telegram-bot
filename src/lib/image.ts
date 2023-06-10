@@ -21,6 +21,7 @@ import {
 import { backOff } from 'exponential-backoff'
 import { updateImageGenerationsRemaining } from './supabase'
 import { getFile } from '@/lib/bot'
+import { getErrorMessage } from '@/utils/handlers'
 
 export type ImageGenerationResult =
   | {
@@ -67,6 +68,22 @@ export const hasPrompt = (obj: any): obj is { prompt: string } => {
   return typeof obj === 'object' && obj !== null && 'prompt' in obj
 }
 
+async function updateGenerationsCount(
+  userId: number,
+  imageGenerationsRemaining: number,
+) {
+  const updateUserImageGenerationRemainingDB =
+    await updateImageGenerationsRemaining(userId, imageGenerationsRemaining - 1)
+  if (!updateUserImageGenerationRemainingDB) {
+    throw new Error(INTERNAL_SERVER_ERROR_MESSAGE)
+  }
+
+  await updateUserImageGenerationsRemainingRedis(
+    userId,
+    imageGenerationsRemaining - 1,
+  )
+}
+
 /**
  * Update the image generations remaining for the user in redis
  *
@@ -86,50 +103,40 @@ export const updateUserImageGenerationsRemainingRedis = async (
   await redisMulti.exec() // Execute the transaction
 }
 
+// A separate function for getting and updating image generations count
+async function getImageGenerationsCount(userId: number) {
+  const userKey = `user:${userId}`
+  const imageGenerationsRemaining = parseInt(
+    (await hget(userKey, 'image_generations_remaining')) || '0',
+  )
+  if (!imageGenerationsRemaining || imageGenerationsRemaining <= 0) {
+    throw new Error(INSUFFICEINT_IMAGE_GENERATIONS_MESSAGE)
+  }
+  return imageGenerationsRemaining
+}
+
 /**
  * Process an image prompt for the user and return the generated image
- *
- * @param prompt
- * @param userId
- * @returns
  */
 export async function processImagePromptOpenJourney(
   prompt: string,
   userId: number,
 ): Promise<ImageGenerationResult> {
   // Acquire a lock on the user resource
-  const userKey = `user:${userId}`
   const userLockResource = `locks:user:image:${userId}`
   try {
     const unlock = await lock(userLockResource)
 
     try {
-      const imageGenerationsRemaining = parseInt(
-        (await hget(userKey, 'image_generations_remaining')) || '0',
-      )
-
-      // Check if the user has enough image generations remaining
-      if (!imageGenerationsRemaining || imageGenerationsRemaining <= 0) {
-        return {
-          success: false,
-          errorMessage: INSUFFICEINT_IMAGE_GENERATIONS_MESSAGE,
-        }
-      }
+      const imageGenerationsRemaining = await getImageGenerationsCount(userId)
 
       const generationResponse: ReplicatePredictionResponse =
         await generateOpenJourney(prompt)
 
-      console.log(`Generation response: ${JSON.stringify(generationResponse)}`)
-
       if (!generationResponse.success) {
-        return {
-          success: false,
-          errorMessage:
-            generationResponse.errorMessage || IMAGE_GENERATION_ERROR_MESSAGE,
-        }
+        throw new Error(generationResponse.errorMessage || IMAGE_GENERATION_ERROR_MESSAGE)
       }
 
-      console.log(`id is ${generationResponse.id}`)
       const id = generationResponse.id
       let generatedImage = null
 
@@ -142,31 +149,12 @@ export async function processImagePromptOpenJourney(
         console.error(e)
       }
 
-      console.log(`Generated image: ${generatedImage}`)
-
       if (!generatedImage || generatedImage.length < 10) {
-        return {
-          success: false,
-          errorMessage: IMAGE_GENERATION_ERROR_MESSAGE,
-        }
+        throw new Error(IMAGE_GENERATION_ERROR_MESSAGE);
       }
 
-      const updateUserImageGenerationRemainingDB =
-        await updateImageGenerationsRemaining(
-          userId,
-          imageGenerationsRemaining - 1,
-        )
-      if (!updateUserImageGenerationRemainingDB) {
-        return {
-          success: false,
-          errorMessage: INTERNAL_SERVER_ERROR_MESSAGE,
-        }
-      }
-
-      await updateUserImageGenerationsRemainingRedis(
-        userId,
-        imageGenerationsRemaining - 1,
-      )
+      // Update the image generations remaining for the user
+      await updateGenerationsCount(userId, imageGenerationsRemaining-1)
 
       return {
         success: true,
@@ -175,86 +163,90 @@ export async function processImagePromptOpenJourney(
       }
     } catch (err) {
       console.error(err)
-      return { success: false, errorMessage: INTERNAL_SERVER_ERROR_MESSAGE }
+      const errorMessage = getErrorMessage(err)
+      return {
+        success: false,
+        errorMessage: errorMessage || INTERNAL_SERVER_ERROR_MESSAGE,
+      }
     } finally {
       // Release the lock when we're done
       await unlock()
     }
   } catch (err) {
-    // Failed to acquire lock
     console.error(err)
-    return { success: false, errorMessage: INTERNAL_SERVER_ERROR_MESSAGE }
+    const errorMessage = getErrorMessage(err)
+    return {
+      success: false,
+      errorMessage: errorMessage || INTERNAL_SERVER_ERROR_MESSAGE,
+    }
   }
 }
+
+function getFileIdFromMessage(message: TelegramBot.Message): string {
+  if (message.document) {
+    return message.document.file_id
+  } else if (message.photo) {
+    return message.photo[message.photo.length - 1].file_id
+  } else {
+    return ''
+  }
+}
+
+async function fetchAndUploadFile(fileId: string): Promise<{public_id: string, cloudinaryUrl: string}> {
+  const file = await getFile(fileId)
+  const imagePath = `https://api.telegram.org/file/bot${process.env.NEXT_PUBLIC_TELEGRAM_TOKEN}/${file.file_path}`
+  const response = await fetch(imagePath)
+  const arrayBuffer = await response.arrayBuffer()
+  const fileBuffer = Buffer.from(arrayBuffer as any, 'binary').toString(
+    'base64',
+  )
+
+  // #TODO: delete this image after some time
+  const uploadResponse = await uploadImage(
+    `data:image/jpeg;base64,${fileBuffer}`,
+  )
+
+  if (!uploadResponse) {
+    throw new Error(IMAGE_GENERATION_ERROR_MESSAGE)
+  }
+
+  const public_id = uploadResponse.public_id
+  const cloudinaryUrl = uploadResponse.secure_url
+  return {public_id, cloudinaryUrl}
+} 
 
 /**
  * Process a Image file, fetch from url, create a base64 string, upload to cloudinary, send to replicate api,
  * check status using backoff, get Image , update user image generation count, return Image to the user
- *
- * @param {string} imagePath - URL path to the image file
- * @param {number} userId - User ID
- * @param {ConversionModel} conversionModel - Conversion Model
- * @return {Promise<EmbeddingResult>} - EmbeddingResult
  */
 export async function processImage(
   message: TelegramBot.Message,
   userId: number,
   conversionModel: Omit<ConversionModel, 'openjourney'>,
 ): Promise<ImageGenerationResult> {
-  const {
-    chat: { id: chatId },
-    message_id: messageId,
-  } = message
+
   // Acquire a lock on the user resource
-  const userKey = `user:${userId}`
   const userLockResource = `locks:user:image:${userId}`
-  let file_id = ''
-  if (message.document) {
-    file_id = message.document.file_id
-  } else if (message.photo) {
-    file_id = message.photo[message.photo.length - 1].file_id
-  } else {
+
+  // Get the file id from the message
+  let file_id = getFileIdFromMessage(message)
+  
+  if (!file_id) {
     return { success: false, errorMessage: INTERNAL_SERVER_ERROR_MESSAGE }
   }
+
   try {
     let unlock = await lock(userLockResource)
     // used to remove the image from cloudinary after some time
     let public_id = ''
 
     try {
-      const imageGenerationsRemaining = parseInt(
-        (await hget(userKey, 'image_generations_remaining')) || '0',
-      )
+      const imageGenerationsRemaining = await getImageGenerationsCount(userId);
 
-      // Check if the user has enough image generations remaining
-      if (!imageGenerationsRemaining || imageGenerationsRemaining <= 0) {
-        return {
-          success: false,
-          errorMessage: INSUFFICEINT_IMAGE_GENERATIONS_MESSAGE,
-        }
-      }
-      const file = await getFile(file_id)
-      const imagePath = `https://api.telegram.org/file/bot${process.env.NEXT_PUBLIC_TELEGRAM_TOKEN}/${file.file_path}`
-      const response = await fetch(imagePath)
-      const arrayBuffer = await response.arrayBuffer()
-      const fileBuffer = Buffer.from(arrayBuffer as any, 'binary').toString(
-        'base64',
-      )
+      const fileUpload = await fetchAndUploadFile(file_id)
 
-      // #TODO: delete this image after some time
-      const uploadResponse = await uploadImage(
-        `data:image/jpeg;base64,${fileBuffer}`,
-      )
-
-      if (!uploadResponse) {
-        return {
-          success: false,
-          errorMessage: IMAGE_GENERATION_ERROR_MESSAGE,
-        }
-      }
-
-      public_id = uploadResponse.public_id
-      const cloudinaryUrl = uploadResponse.secure_url
+      public_id = fileUpload.public_id
+      const cloudinaryUrl = fileUpload.cloudinaryUrl
 
       let generationResponse: ReplicatePredictionResponse = {} as any
 
@@ -266,8 +258,6 @@ export async function processImage(
         generationResponse = await generateGfpGan(cloudinaryUrl)
       }
 
-      console.log(`Generation response: ${JSON.stringify(generationResponse)}`)
-
       if (!generationResponse.success) {
         return {
           success: false,
@@ -297,22 +287,8 @@ export async function processImage(
         }
       }
 
-      const updateUserImageGenerationRemainingDB =
-        await updateImageGenerationsRemaining(
-          userId,
-          imageGenerationsRemaining - 1,
-        )
-      if (!updateUserImageGenerationRemainingDB) {
-        return {
-          success: false,
-          errorMessage: INTERNAL_SERVER_ERROR_MESSAGE,
-        }
-      }
-
-      await updateUserImageGenerationsRemainingRedis(
-        userId,
-        imageGenerationsRemaining - 1,
-      )
+      // Update the image generations remaining for the user
+      await updateGenerationsCount(userId, imageGenerationsRemaining-1)
 
       return {
         success: true,
