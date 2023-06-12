@@ -1,7 +1,7 @@
 // Image generation endpoint for QStash
 import { NextApiRequest, NextApiResponse } from 'next'
 import { sendDocument, sendMessage } from '@/lib/bot'
-import { GENERATED_IMAGE_MESSAGE } from '@/utils/constants'
+import { GENERATED_IMAGE_MESSAGE, INTERNAL_SERVER_ERROR_MESSAGE } from '@/utils/constants'
 import {
   ImageBody,
   blendImages,
@@ -10,6 +10,7 @@ import {
 } from '@/lib/image'
 import { verifySignature } from '@upstash/qstash/nextjs'
 import { ConversionModel } from '@/types'
+import { qStash } from '@/lib/qstash'
 
 export async function handler(req: NextApiRequest, res: NextApiResponse) {
   const body = req.body
@@ -24,7 +25,33 @@ export async function handler(req: NextApiRequest, res: NextApiResponse) {
   let image
   if (conversionModel == ConversionModel.OPENJOURNEY) {
     const { text } = body
-    image = await processImagePromptOpenJourney(text, userId)
+    const id = await processImagePromptOpenJourney(text)
+    if (id) {
+      try {
+        const body = {
+          message: message,
+          userId,
+          taskId: id,
+        }
+
+        const qStashPublishResponse = await qStash.publishJSON({
+          url: `${process.env.QSTASH_URL}/midjourney` as string,
+          body,
+        })
+        if (!qStashPublishResponse || !qStashPublishResponse.messageId) {
+          await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
+            reply_to_message_id: messageId,
+          })
+        }
+        console.log(`QStash Response: ${qStashPublishResponse.messageId}`)
+      } catch (err) {
+        console.error(err)
+        await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
+          reply_to_message_id: messageId,
+        })
+      }
+    }
+    return;
   } 
   else if (conversionModel == ConversionModel.MJ_BLEND) {
      image = await blendImages(message,userId);

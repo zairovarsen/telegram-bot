@@ -24,7 +24,7 @@ import {
 } from '@/lib/replicate'
 import { backOff } from 'exponential-backoff'
 import { updateImageGenerationsRemaining } from './supabase'
-import { getFile } from '@/lib/bot'
+import { getFile, sendMessage } from '@/lib/bot'
 import { getErrorMessage } from '@/utils/handlers'
 
 export type ImageGenerationResult =
@@ -119,13 +119,10 @@ async function getImageGenerationsCount(userId: number) {
   return imageGenerationsRemaining
 }
 
-/**
- * Process an image prompt for the user and return the generated image
- */
-export async function processImagePromptOpenJourney(
-  prompt: string,
+export async function pollMidJourney(
   userId: number,
-): Promise<ImageGenerationResult> {
+  taskId: string,
+):  Promise<ImageGenerationResult> {
   // Acquire a lock on the user resource
   const userLockResource = `locks:user:image:${userId}`
   try {
@@ -134,19 +131,10 @@ export async function processImagePromptOpenJourney(
     try {
       const imageGenerationsRemaining = await getImageGenerationsCount(userId)
 
-      const generationResponse = (await generateMidjourneyImage(
-        prompt,
-      )) as ReplicatePredictionResponse
-
-      if (!generationResponse.success) {
-        throw new Error(IMAGE_GENERATION_ERROR_MESSAGE)
-      }
-
-      const id = generationResponse.id
       let generatedImage = null
 
       try {
-        generatedImage = await backOff(() => getMidjourneyImage(id), {
+        generatedImage = await backOff(() => getMidjourneyImage(taskId), {
           startingDelay: 5000,
           numOfAttempts: 10,
         })
@@ -184,7 +172,31 @@ export async function processImagePromptOpenJourney(
       success: false,
       errorMessage: errorMessage || INTERNAL_SERVER_ERROR_MESSAGE,
     }
-  }
+  } 
+} 
+
+/**
+ * Process an image prompt for the user and return the generated image
+ */
+export async function processImagePromptOpenJourney(
+  prompt: string,
+): Promise<string | null> {
+    try {
+      const generationResponse = (await generateMidjourneyImage(
+        prompt,
+      )) as ReplicatePredictionResponse
+
+      if (!generationResponse.success) {
+        throw new Error(IMAGE_GENERATION_ERROR_MESSAGE)
+      }
+
+      const id = generationResponse.id
+      return id;
+    } catch (err) {
+      console.error(err)
+      const errorMessage = getErrorMessage(err)
+      return null
+    } 
 }
 
 function getFileIdFromMessage(message: TelegramBot.Message): string {

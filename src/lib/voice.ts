@@ -20,6 +20,7 @@ import path from 'path'
 import os from 'os'
 import { handleError } from '@/utils/handlers'
 import { handleAudioRequest } from './audio'
+import { qStash } from './qstash'
 
 export interface VoiceBody {
   message: TelegramBot.Message
@@ -58,15 +59,31 @@ const handleQuestionType = async (
     )
   }
    else {
-    const result = await processImagePromptOpenJourney(question, userId)
-    if (result.success) {
-      await sendDocument(chatId, result.fileUrl, {
-        reply_to_message_id: messageId,
-      })
-    } else {
-      await sendMessage(chatId, result.errorMessage, {
-        reply_to_message_id: messageId,
-      })
+    const id = await processImagePromptOpenJourney(question)
+    if (id) {
+      try {
+        const body = {
+          message: message,
+          userId,
+          taskId: id,
+        }
+
+        const qStashPublishResponse = await qStash.publishJSON({
+          url: `${process.env.QSTASH_URL}/midjourney` as string,
+          body,
+        })
+        if (!qStashPublishResponse || !qStashPublishResponse.messageId) {
+          await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
+            reply_to_message_id: messageId,
+          })
+        }
+        console.log(`QStash Response: ${qStashPublishResponse.messageId}`)
+      } catch (err) {
+        console.error(err)
+        await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
+          reply_to_message_id: messageId,
+        })
+      }
     }
   }
 }

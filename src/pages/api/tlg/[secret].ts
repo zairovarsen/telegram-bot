@@ -21,6 +21,7 @@ import {
   TERMS_AND_CONDITIONS,
   TEXT_VOICE_MESSAGE,
   UNABLE_TO_PROCESS_DOCUMENT_MESSAGE,
+  WORKING_ON_NEW_FEATURES_MESSAGE,
 } from '@/utils/constants'
 import {
   WELCOME_MESSAGE,
@@ -466,6 +467,13 @@ You have access to:
             rateLimitResult.minutes,
           ),
         )
+        return
+      }
+
+      if (data == 'Blend') {
+        await sendMessage(chatId, WORKING_ON_NEW_FEATURES_MESSAGE, {
+          reply_to_message_id: messageId,
+        })
         return
       }
 
