@@ -1,5 +1,6 @@
 import { getRedisClient, hget, lock } from '@/lib/redis'
 import {
+  BLEND_IMAGE_REQUIRED_MESSAGE,
   IMAGE_GENERATION_ERROR_MESSAGE,
   INSUFFICEINT_IMAGE_GENERATIONS_MESSAGE,
   INTERNAL_SERVER_ERROR_MESSAGE,
@@ -12,11 +13,14 @@ import {
 } from '@/types'
 import {
   ReplicatePredictionResponse,
+  generateBlendedImages,
   generateGfpGan,
+  generateMidjourneyImage,
   generateOpenJourney,
   generateRoom,
   generateScribble,
   getImageStatus,
+  getMidjourneyImage,
 } from '@/lib/replicate'
 import { backOff } from 'exponential-backoff'
 import { updateImageGenerationsRemaining } from './supabase'
@@ -39,7 +43,7 @@ export type ImageBody =
   | {
       message: TelegramBot.Message
       userId: number
-      conversionModel: ConversionModelAllButOpenJourney
+      conversionModel: ConversionModelAllButOpenJourney,
     }
   | {
       message: TelegramBot.Message
@@ -80,7 +84,7 @@ async function updateGenerationsCount(
 
   await updateUserImageGenerationsRemainingRedis(
     userId,
-    imageGenerationsRemaining - 1,
+    imageGenerationsRemaining,
   )
 }
 
@@ -130,19 +134,20 @@ export async function processImagePromptOpenJourney(
     try {
       const imageGenerationsRemaining = await getImageGenerationsCount(userId)
 
-      const generationResponse: ReplicatePredictionResponse =
-        await generateOpenJourney(prompt)
+      const generationResponse = (await generateMidjourneyImage(
+        prompt,
+      )) as ReplicatePredictionResponse
 
       if (!generationResponse.success) {
-        throw new Error(generationResponse.errorMessage || IMAGE_GENERATION_ERROR_MESSAGE)
+        throw new Error(IMAGE_GENERATION_ERROR_MESSAGE)
       }
 
       const id = generationResponse.id
       let generatedImage = null
 
       try {
-        generatedImage = await backOff(() => getImageStatus(id), {
-          startingDelay: 1000,
+        generatedImage = await backOff(() => getMidjourneyImage(id), {
+          startingDelay: 5000,
           numOfAttempts: 10,
         })
       } catch (e) {
@@ -150,11 +155,11 @@ export async function processImagePromptOpenJourney(
       }
 
       if (!generatedImage || generatedImage.length < 10) {
-        throw new Error(IMAGE_GENERATION_ERROR_MESSAGE);
+        throw new Error(IMAGE_GENERATION_ERROR_MESSAGE)
       }
 
       // Update the image generations remaining for the user
-      await updateGenerationsCount(userId, imageGenerationsRemaining-1)
+      await updateGenerationsCount(userId, imageGenerationsRemaining - 1)
 
       return {
         success: true,
@@ -192,19 +197,25 @@ function getFileIdFromMessage(message: TelegramBot.Message): string {
   }
 }
 
-async function fetchAndUploadFile(fileId: string): Promise<{public_id: string, cloudinaryUrl: string}> {
-  const file = await getFile(fileId)
+/* Given the file id , generate a base64 string of the image */
+async function getBase64(file: TelegramBot.File): Promise<string> {
   const imagePath = `https://api.telegram.org/file/bot${process.env.NEXT_PUBLIC_TELEGRAM_TOKEN}/${file.file_path}`
+  console.log(imagePath)
   const response = await fetch(imagePath)
   const arrayBuffer = await response.arrayBuffer()
   const fileBuffer = Buffer.from(arrayBuffer as any, 'binary').toString(
     'base64',
   )
+  return `data:image/jpeg;base64,${fileBuffer}`
+}
 
-  // #TODO: delete this image after some time
-  const uploadResponse = await uploadImage(
-    `data:image/jpeg;base64,${fileBuffer}`,
-  )
+async function fetchAndUploadFile(
+  fileId: string,
+): Promise<{ public_id: string; cloudinaryUrl: string }> {
+  const file = await getFile(fileId)
+  const base64 = await getBase64(file)
+
+  const uploadResponse = await uploadImage(base64)
 
   if (!uploadResponse) {
     throw new Error(IMAGE_GENERATION_ERROR_MESSAGE)
@@ -212,8 +223,92 @@ async function fetchAndUploadFile(fileId: string): Promise<{public_id: string, c
 
   const public_id = uploadResponse.public_id
   const cloudinaryUrl = uploadResponse.secure_url
-  return {public_id, cloudinaryUrl}
-} 
+  return { public_id, cloudinaryUrl }
+}
+
+/* Blend 2 images using midjourney api */
+export async function blendImages(
+  message: TelegramBot.Message,
+  userId: number,
+): Promise<ImageGenerationResult> {
+  // Acquire a lock on the user resource
+  const userLockResource = `locks:user:image:${userId}`
+  try {
+    const unlock = await lock(userLockResource)
+
+
+    try {
+      const imageGenerationsRemaining = await getImageGenerationsCount(userId)
+
+      if (!message.photo || !message.photo.length ) {
+        return {
+          success: false,
+          errorMessage: 'Please send an image',
+        }
+      }
+
+      // #NOTE: Take last 2 images from message.photo
+      const fileIds = message.photo.slice(-2).map((photo) => photo.file_id)
+      const base64Images = []
+
+      for (const fileId of fileIds) {
+        const file = await getFile(fileId)
+        const base64 = await getBase64(file)
+        base64Images.push(base64)
+      }
+
+      const generationResponse = (await generateBlendedImages(
+        base64Images,
+      )) as ReplicatePredictionResponse
+
+      if (!generationResponse.success) {
+        throw new Error(IMAGE_GENERATION_ERROR_MESSAGE)
+      }
+
+      const id = generationResponse.id
+      let generatedImage = null
+
+      try {
+        generatedImage = await backOff(() => getMidjourneyImage(id), {
+          startingDelay: 5000,
+          numOfAttempts: 10,
+        })
+      } catch (e) {
+        console.error(e)
+      }
+
+      if (!generatedImage || generatedImage.length < 10) {
+        throw new Error(IMAGE_GENERATION_ERROR_MESSAGE)
+      }
+
+      // Update the image generations remaining for the user
+      await updateGenerationsCount(userId, imageGenerationsRemaining - 1)
+
+      return {
+        success: true,
+        imageGenerationsRemaining: imageGenerationsRemaining - 1,
+        fileUrl: generatedImage,
+      }
+    } catch (err) {
+      console.error(err)
+      const errorMessage = getErrorMessage(err)
+      return {
+        success: false,
+        errorMessage: errorMessage || INTERNAL_SERVER_ERROR_MESSAGE,
+      }
+    } finally {
+      // Release the lock when we're done
+      await unlock()
+    }
+  } catch (err) {
+    console.error(err)
+    const errorMessage = getErrorMessage(err)
+    return {
+      success: false,
+      errorMessage: errorMessage || INTERNAL_SERVER_ERROR_MESSAGE,
+    }
+  }
+}
 
 /**
  * Process a Image file, fetch from url, create a base64 string, upload to cloudinary, send to replicate api,
@@ -224,13 +319,12 @@ export async function processImage(
   userId: number,
   conversionModel: Omit<ConversionModel, 'openjourney'>,
 ): Promise<ImageGenerationResult> {
-
   // Acquire a lock on the user resource
   const userLockResource = `locks:user:image:${userId}`
 
   // Get the file id from the message
   let file_id = getFileIdFromMessage(message)
-  
+
   if (!file_id) {
     return { success: false, errorMessage: INTERNAL_SERVER_ERROR_MESSAGE }
   }
@@ -241,7 +335,7 @@ export async function processImage(
     let public_id = ''
 
     try {
-      const imageGenerationsRemaining = await getImageGenerationsCount(userId);
+      const imageGenerationsRemaining = await getImageGenerationsCount(userId)
 
       const fileUpload = await fetchAndUploadFile(file_id)
 
@@ -261,8 +355,7 @@ export async function processImage(
       if (!generationResponse.success) {
         return {
           success: false,
-          errorMessage:
-            generationResponse.errorMessage || IMAGE_GENERATION_ERROR_MESSAGE,
+          errorMessage: IMAGE_GENERATION_ERROR_MESSAGE,
         }
       }
 
@@ -288,7 +381,7 @@ export async function processImage(
       }
 
       // Update the image generations remaining for the user
-      await updateGenerationsCount(userId, imageGenerationsRemaining-1)
+      await updateGenerationsCount(userId, imageGenerationsRemaining - 1)
 
       return {
         success: true,

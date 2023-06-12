@@ -1,3 +1,4 @@
+import { MidJourneyProxyTaskResponse } from '@/types'
 import {
   IMAGE_GENERATION_ERROR_MESSAGE,
   ROOM_GENERATION_PROMPT,
@@ -134,5 +135,77 @@ export const getImageStatus = async (id: string): Promise<string> => {
         }
       }
       throw new Error('Image generation failed')
+    })
+}
+
+/* Blend 2 base 64 images */
+export const generateBlendedImages = async (
+  base64Array: string[]
+): Promise<ReplicatePredictionResponse> => {
+ 
+  const response = await fetch(`${process.env.MIDJOURNEY_RAILWAY_PROXY}/mj/submit/blend`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'mj-api-secret': process.env.MIDJOURNEY_RAILWAY_PROXY_SECRET as string,
+    },
+    body: JSON.stringify({
+      base64Array
+    }),
+  })
+  console.log(response);
+  if (response.status !== 200) {
+    const error = await response.json()
+    console.error(`Issue with midjourney API call: ${error.detail}`)
+    return { success: false, errorMessage: IMAGE_GENERATION_ERROR_MESSAGE}
+  }  
+
+  const prediction = await response.json() 
+  return { success: true, id: prediction.result }
+}
+
+/* Generate midjourney image using proxy */
+export const generateMidjourneyImage = async (
+  prompt: string,
+): Promise<ReplicatePredictionResponse> => {
+  const response = await fetch(`${process.env.MIDJOURNEY_RAILWAY_PROXY}/mj/submit/imagine`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'mj-api-secret': process.env.MIDJOURNEY_RAILWAY_PROXY_SECRET as string,
+    },
+    body: JSON.stringify({
+      prompt
+    }),
+  })
+
+  if (response.status !== 200) {
+    const error = await response.json()
+    console.error(`Issue with midjourney API call: ${error.detail}`)
+    return { success: false, errorMessage: IMAGE_GENERATION_ERROR_MESSAGE}
+  }  
+
+  const prediction = await response.json() 
+  return { success: true, id: prediction.result }
+}
+
+/* Check proxy task of midjournmey image generation */
+export const getMidjourneyImage = async (id: string): Promise<string> => { 
+  return await fetch(`${process.env.MIDJOURNEY_RAILWAY_PROXY}/mj/task/${id}/fetch`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'mj-api-secret': process.env.MIDJOURNEY_RAILWAY_PROXY_SECRET as string,
+    },
+  })
+    .then(r => r.json())
+    .then(finalResponse => {
+      const jsonFinalResponse = finalResponse as MidJourneyProxyTaskResponse;
+      const status = jsonFinalResponse.status;
+      if (status == 'SUCCESS') {
+         return jsonFinalResponse.imageUrl 
+      } else {
+        throw new Error('Image generation failed')
+      } 
     })
 }

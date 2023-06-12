@@ -6,7 +6,7 @@ export const config = {
   ],
 }
 
-// https://api.telegram.org/bot6265645703:AAHAahkwSKsmAkx5zUvlzfVQe9D_gwUbzFs/setWebhook?url=https://telegram-bot-six-mu.vercel.app/api/tlg/3953fe1a736753754aefa15db40c523e295864d7&drop_pending_updates=true&allowed_updates=["message","callback_query","pre_checkout_query"]&secret_token=3953fe1a736753754aefa15db40c523e295864d7
+// https://api.telegram.org/bot6265645703:AAHAahkwSKsmAkx5zUvlzfVQe9D_gwUbzFs/setWebhook?url=https://e9bd-5-76-190-114.eu.ngrok.io/api/tlg/3953fe1a736753754aefa15db40c523e295864d7&drop_pending_updates=true&allowed_updates=["message","callback_query","pre_checkout_query"]&secret_token=3953fe1a736753754aefa15db40c523e295864d7
 
 export default async function middleware(req: NextRequest) {
   const { url } = req

@@ -1,5 +1,21 @@
 import { SelectUser } from '@/lib/supabase'
-import { EventEmitter, Readable, Stream } from 'stream'
+import {  Readable, Stream } from 'stream'
+
+export type MidJourneyProxyTaskResponse = {
+  action: string;
+  description: string;
+  failReason: string;
+  finishTime: number;
+  id: string;
+  imageUrl: string;
+  progress: string;
+  prompt: string;
+  promptEn: string;
+  startTime: number;
+  state: string;
+  status: string;
+  submitTime: number;
+}
 
 export type Embedding = {
   url: string
@@ -22,6 +38,7 @@ export enum ConversionModel {
   CONTROLNET_SCRIBBLE = 'CONTROLNET_SCRIBBLE',
   GFPGAN = 'GFPGAN',
   OPENJOURNEY = 'OPENJOURNEY',
+  MJ_BLEND = 'MJ_BLEND',
 }
 
 export interface Task {

@@ -131,6 +131,12 @@ export const PDF_PROCESSING_SUCCESS_MESSAGE = `
 🎉 Success! 🎉 InsightAI has successfully processed the PDF document and is now ready to assist you. Feel free to ask anything you want, and let our AI-powered bot provide you with valuable insights. Let's explore the knowledge together! 🤖🔍
 `
 
+export const BLEND_IMAGE_REQUIRED_MESSAGE = `
+⚠️ Blending requires 2 images ⚠️
+
+To blend images, please upload two images and try again. Thank you for using InsightAI!
+`
+
 export const INTERNAL_SERVER_ERROR_MESSAGE = `
 ⚠️ Internal Server Error ⚠️
 
@@ -321,6 +327,8 @@ export const IMAGE_GENERATION_MESSAGE = `
 
 🔵 Room - Generate a modern room from a photo
 
+🔵 Blend - Blend two images together
+
 Please choose one of the above options to continue.
 `
 
@@ -337,6 +345,10 @@ export const IMAGE_GENERATION_OPTIONS = [
     title: 'Room',
     description: 'Generate a modern room from a photo',
   },
+  {
+    title: "Blend",
+    description: "Blend two images together"
+  }
 ]
 
 export const GENERATED_IMAGE_MESSAGE = `

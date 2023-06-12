@@ -62,14 +62,13 @@ import {
 } from '@/lib/supabase'
 import {
   del,
+  get,
   getRedisClient,
-  hget,
   lock,
   safeGetObject,
   set,
 } from '@/lib/redis'
 import { MemeType, processMemeGeneration } from '@/lib/meme'
-import { Readable } from 'stream'
 import { handleAudioRequest } from '@/lib/audio'
 import {
   analyzeTaskAgent,
@@ -301,7 +300,9 @@ You have access to:
         await sendMessage(chatId, TEXT_VOICE_MESSAGE, {
           reply_to_message_id: message_id,
           reply_markup: {
-            inline_keyboard: TEXT_GENERATION_OPTIONS.filter(e => (e.title != 'Goal' && e.title != 'Meme')).map(e => {
+            inline_keyboard: TEXT_GENERATION_OPTIONS.filter(
+              e => e.title != 'Goal' && e.title != 'Meme',
+            ).map(e => {
               return [
                 {
                   text: e.title,
@@ -312,6 +313,7 @@ You have access to:
           },
         })
       } else if (message.photo) {
+        // await set(`image:${userId}`,message.photo[message.photo.length - 1].file_id)
         await sendMessage(chatId, IMAGE_GENERATION_MESSAGE, {
           reply_to_message_id: message_id,
           reply_markup: {
@@ -471,7 +473,8 @@ You have access to:
         data == 'Room' ||
         data == 'Restore' ||
         data == 'Scribble' ||
-        data == 'Imagine'
+        data == 'Imagine' ||
+        data == 'Blend'
       ) {
         if (userData.image_generations_remaining <= 0) {
           await sendMessage(chatId, INSUFFICEINT_IMAGE_GENERATIONS_MESSAGE, {
@@ -550,8 +553,8 @@ You have access to:
         (data == 'General Question' ||
           data == 'PDF Question' ||
           data == 'Goal' ||
-          data == 'Imagine' || 
-          data == 'Ask Steve Jobs' || 
+          data == 'Imagine' ||
+          data == 'Ask Steve Jobs' ||
           data == 'Ask Ben Shapiro')
       ) {
         try {
@@ -592,7 +595,7 @@ You have access to:
             reply_to_message_id: messageId,
           })
         }
-      }  else if (text && data == 'Ask Steve Jobs') {
+      } else if (text && data == 'Ask Steve Jobs') {
         await handleAudioRequest(
           userId,
           message?.reply_to_message,
@@ -835,7 +838,8 @@ ${allTasks
         data == 'Room' ||
         data == 'Restore' ||
         data == 'Scribble' ||
-        data == 'Imagine'
+        data == 'Imagine' ||
+        data == 'Blend'
       ) {
         try {
           let body = {}
@@ -844,7 +848,9 @@ ${allTasks
               message: message.reply_to_message,
               userId,
               conversionModel:
-                data == 'Room'
+                data == 'Blend'
+                  ? ConversionModel.MJ_BLEND
+                  : data == 'Room'
                   ? ConversionModel.CONTROLNET_HOUGH
                   : data == 'Scribble'
                   ? ConversionModel.CONTROLNET_SCRIBBLE

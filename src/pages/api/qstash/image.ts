@@ -4,6 +4,7 @@ import { sendDocument, sendMessage } from '@/lib/bot'
 import { GENERATED_IMAGE_MESSAGE } from '@/utils/constants'
 import {
   ImageBody,
+  blendImages,
   processImage,
   processImagePromptOpenJourney,
 } from '@/lib/image'
@@ -24,7 +25,11 @@ export async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (conversionModel == ConversionModel.OPENJOURNEY) {
     const { text } = body
     image = await processImagePromptOpenJourney(text, userId)
-  } else {
+  } 
+  else if (conversionModel == ConversionModel.MJ_BLEND) {
+     image = await blendImages(message,userId);
+  }
+  else {
     image = await processImage(message, userId, conversionModel)
   }
 
