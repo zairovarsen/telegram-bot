@@ -37,6 +37,7 @@ export async function handler(req: NextApiRequest, res: NextApiResponse) {
         const qStashPublishResponse = await qStash.publishJSON({
           url: `${process.env.QSTASH_URL}/midjourney` as string,
           body,
+          retries: 2,
         })
         if (!qStashPublishResponse || !qStashPublishResponse.messageId) {
           await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {

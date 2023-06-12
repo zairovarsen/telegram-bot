@@ -77,7 +77,7 @@ async function updateGenerationsCount(
   imageGenerationsRemaining: number,
 ) {
   const updateUserImageGenerationRemainingDB =
-    await updateImageGenerationsRemaining(userId, imageGenerationsRemaining - 1)
+    await updateImageGenerationsRemaining(userId, imageGenerationsRemaining)
   if (!updateUserImageGenerationRemainingDB) {
     throw new Error(INTERNAL_SERVER_ERROR_MESSAGE)
   }
