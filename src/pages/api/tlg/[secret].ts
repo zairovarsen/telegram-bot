@@ -78,6 +78,7 @@ import {
   startGoalAgent,
 } from '@/lib/agent'
 
+
 export const config = {
   runtime: 'edge',
   regions: ['fra1'], // Only execute this function in Frankfurt fra1
@@ -314,7 +315,22 @@ You have access to:
           },
         })
       } else if (message.photo) {
-        // await set(`image:${userId}`,message.photo[message.photo.length - 1].file_id)
+        const fileId = message.photo[message.photo.length - 1].file_id
+        let response = await get(`images:${userId}`); 
+        let images = [];
+
+        if (response) {
+          images = JSON.parse(JSON.stringify(response));
+          console.log(images)
+        }
+
+        if (images.length >= 2) {
+          images = images.slice(1);
+        }
+
+        images.push(fileId);
+        await set(`images:${userId}`, JSON.stringify(images));
+        
         await sendMessage(chatId, IMAGE_GENERATION_MESSAGE, {
           reply_to_message_id: message_id,
           reply_markup: {
@@ -467,13 +483,6 @@ You have access to:
             rateLimitResult.minutes,
           ),
         )
-        return
-      }
-
-      if (data == 'Blend') {
-        await sendMessage(chatId, WORKING_ON_NEW_FEATURES_MESSAGE, {
-          reply_to_message_id: messageId,
-        })
         return
       }
 
@@ -851,6 +860,25 @@ ${allTasks
       ) {
         try {
           let body = {}
+          
+          if (data == 'Blend') {
+            let response = await get(`images:${userId}`);
+            if (!response) {
+              await sendMessage(chatId, 'Please send me two images first.', {
+                reply_to_message_id: messageId,
+              })
+              return
+            }
+
+            const images = JSON.parse(JSON.stringify(response));
+            if (images.length < 2) {
+              await sendMessage(chatId, 'Please send me two images first.', {
+                reply_to_message_id: messageId,
+              })
+              return
+            }
+          }
+
           if (data !== 'Imagine') {
             body = {
               message: message.reply_to_message,

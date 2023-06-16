@@ -1,4 +1,4 @@
-import { getRedisClient, hget, lock } from '@/lib/redis'
+import { get, getRedisClient, hget, lock } from '@/lib/redis'
 import {
   BLEND_IMAGE_REQUIRED_MESSAGE,
   IMAGE_GENERATION_ERROR_MESSAGE,
@@ -212,7 +212,6 @@ function getFileIdFromMessage(message: TelegramBot.Message): string {
 /* Given the file id , generate a base64 string of the image */
 async function getBase64(file: TelegramBot.File): Promise<string> {
   const imagePath = `https://api.telegram.org/file/bot${process.env.NEXT_PUBLIC_TELEGRAM_TOKEN}/${file.file_path}`
-  console.log(imagePath)
   const response = await fetch(imagePath)
   const arrayBuffer = await response.arrayBuffer()
   const fileBuffer = Buffer.from(arrayBuffer as any, 'binary').toString(
@@ -238,29 +237,17 @@ async function fetchAndUploadFile(
   return { public_id, cloudinaryUrl }
 }
 
-/* Blend 2 images using midjourney api */
+/* Blend 2 images using midjourney api and return generated Id  */
 export async function blendImages(
-  message: TelegramBot.Message,
   userId: number,
-): Promise<ImageGenerationResult> {
-  // Acquire a lock on the user resource
-  const userLockResource = `locks:user:image:${userId}`
+): Promise<string | null> {
   try {
-    const unlock = await lock(userLockResource)
-
-
-    try {
-      const imageGenerationsRemaining = await getImageGenerationsCount(userId)
-
-      if (!message.photo || !message.photo.length ) {
-        return {
-          success: false,
-          errorMessage: 'Please send an image',
-        }
+      const response = await get(`images:${userId}`)
+      if (!response) {
+        throw new Error(IMAGE_GENERATION_ERROR_MESSAGE)
       }
 
-      // #NOTE: Take last 2 images from message.photo
-      const fileIds = message.photo.slice(-2).map((photo) => photo.file_id)
+      const fileIds = JSON.parse(JSON.stringify(response)) as string[]
       const base64Images = []
 
       for (const fileId of fileIds) {
@@ -278,47 +265,12 @@ export async function blendImages(
       }
 
       const id = generationResponse.id
-      let generatedImage = null
-
-      try {
-        generatedImage = await backOff(() => getMidjourneyImage(id), {
-          startingDelay: 5000,
-          numOfAttempts: 10,
-        })
-      } catch (e) {
-        console.error(e)
-      }
-
-      if (!generatedImage || generatedImage.length < 10) {
-        throw new Error(IMAGE_GENERATION_ERROR_MESSAGE)
-      }
-
-      // Update the image generations remaining for the user
-      await updateGenerationsCount(userId, imageGenerationsRemaining - 1)
-
-      return {
-        success: true,
-        imageGenerationsRemaining: imageGenerationsRemaining - 1,
-        fileUrl: generatedImage,
-      }
-    } catch (err) {
-      console.error(err)
-      const errorMessage = getErrorMessage(err)
-      return {
-        success: false,
-        errorMessage: errorMessage || INTERNAL_SERVER_ERROR_MESSAGE,
-      }
-    } finally {
-      // Release the lock when we're done
-      await unlock()
-    }
+      console.log(`Generated image id: ${id}`);
+      return id;
   } catch (err) {
     console.error(err)
     const errorMessage = getErrorMessage(err)
-    return {
-      success: false,
-      errorMessage: errorMessage || INTERNAL_SERVER_ERROR_MESSAGE,
-    }
+    return null
   }
 }
 

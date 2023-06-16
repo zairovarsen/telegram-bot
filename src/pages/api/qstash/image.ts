@@ -1,7 +1,11 @@
 // Image generation endpoint for QStash
 import { NextApiRequest, NextApiResponse } from 'next'
 import { sendDocument, sendMessage } from '@/lib/bot'
-import { GENERATED_IMAGE_MESSAGE, INTERNAL_SERVER_ERROR_MESSAGE } from '@/utils/constants'
+import {
+  GENERATED_IMAGE_MESSAGE,
+  IMAGE_GENERATION_ERROR_MESSAGE,
+  INTERNAL_SERVER_ERROR_MESSAGE,
+} from '@/utils/constants'
 import {
   ImageBody,
   blendImages,
@@ -51,13 +55,47 @@ export async function handler(req: NextApiRequest, res: NextApiResponse) {
           reply_to_message_id: messageId,
         })
       }
+    } else {
+      await sendMessage(chatId, IMAGE_GENERATION_ERROR_MESSAGE, {
+        reply_to_message_id: messageId,
+      })
     }
-    return;
-  } 
-  else if (conversionModel == ConversionModel.MJ_BLEND) {
-     image = await blendImages(message,userId);
-  }
-  else {
+    return
+  } else if (conversionModel == ConversionModel.MJ_BLEND) {
+      const id = await blendImages(userId)
+      if (id) {
+        try {
+          const body = {
+            message: message,
+            userId,
+            taskId: id,
+          }
+  
+          const qStashPublishResponse = await qStash.publishJSON({
+            url: `${process.env.QSTASH_URL}/midjourney` as string,
+            body,
+            retries: 2,
+          })
+          if (!qStashPublishResponse || !qStashPublishResponse.messageId) {
+            await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
+              reply_to_message_id: messageId,
+            })
+          }
+          console.log(`QStash Response: ${qStashPublishResponse.messageId}`)
+        } catch (err) {
+          console.error(err)
+          await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
+            reply_to_message_id: messageId,
+          })
+        }
+      } else {
+        await sendMessage(chatId, IMAGE_GENERATION_ERROR_MESSAGE, {
+          reply_to_message_id: messageId,
+        })
+      } 
+
+      return;
+  } else {
     image = await processImage(message, userId, conversionModel)
   }
 

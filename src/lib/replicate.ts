@@ -153,7 +153,6 @@ export const generateBlendedImages = async (
       base64Array
     }),
   })
-  console.log(response);
   if (response.status !== 200) {
     const error = await response.json()
     console.error(`Issue with midjourney API call: ${error.detail}`)
