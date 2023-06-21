@@ -346,9 +346,9 @@ export const IMAGE_GENERATION_OPTIONS = [
     description: 'Generate a modern room from a photo',
   },
   {
-    title: "Blend",
-    description: "Blend two images together"
-  }
+    title: 'Blend',
+    description: 'Blend two images together',
+  },
 ]
 
 export const GENERATED_IMAGE_MESSAGE = `

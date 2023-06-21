@@ -43,7 +43,7 @@ export type ImageBody =
   | {
       message: TelegramBot.Message
       userId: number
-      conversionModel: ConversionModelAllButOpenJourney,
+      conversionModel: ConversionModelAllButOpenJourney
     }
   | {
       message: TelegramBot.Message
@@ -122,7 +122,7 @@ async function getImageGenerationsCount(userId: number) {
 export async function pollMidJourney(
   userId: number,
   taskId: string,
-):  Promise<ImageGenerationResult> {
+): Promise<ImageGenerationResult> {
   // Acquire a lock on the user resource
   const userLockResource = `locks:user:image:${userId}`
   try {
@@ -172,8 +172,8 @@ export async function pollMidJourney(
       success: false,
       errorMessage: errorMessage || INTERNAL_SERVER_ERROR_MESSAGE,
     }
-  } 
-} 
+  }
+}
 
 /**
  * Process an image prompt for the user and return the generated image
@@ -181,22 +181,22 @@ export async function pollMidJourney(
 export async function processImagePromptOpenJourney(
   prompt: string,
 ): Promise<string | null> {
-    try {
-      const generationResponse = (await generateMidjourneyImage(
-        prompt,
-      )) as ReplicatePredictionResponse
+  try {
+    const generationResponse = (await generateMidjourneyImage(
+      prompt,
+    )) as ReplicatePredictionResponse
 
-      if (!generationResponse.success) {
-        throw new Error(IMAGE_GENERATION_ERROR_MESSAGE)
-      }
+    if (!generationResponse.success) {
+      throw new Error(IMAGE_GENERATION_ERROR_MESSAGE)
+    }
 
-      const id = generationResponse.id
-      return id;
-    } catch (err) {
-      console.error(err)
-      const errorMessage = getErrorMessage(err)
-      return null
-    } 
+    const id = generationResponse.id
+    return id
+  } catch (err) {
+    console.error(err)
+    const errorMessage = getErrorMessage(err)
+    return null
+  }
 }
 
 function getFileIdFromMessage(message: TelegramBot.Message): string {
@@ -238,35 +238,33 @@ async function fetchAndUploadFile(
 }
 
 /* Blend 2 images using midjourney api and return generated Id  */
-export async function blendImages(
-  userId: number,
-): Promise<string | null> {
+export async function blendImages(userId: number): Promise<string | null> {
   try {
-      const response = await get(`images:${userId}`)
-      if (!response) {
-        throw new Error(IMAGE_GENERATION_ERROR_MESSAGE)
-      }
+    const response = await get(`images:${userId}`)
+    if (!response) {
+      throw new Error(IMAGE_GENERATION_ERROR_MESSAGE)
+    }
 
-      const fileIds = JSON.parse(JSON.stringify(response)) as string[]
-      const base64Images = []
+    const fileIds = JSON.parse(JSON.stringify(response)) as string[]
+    const base64Images = []
 
-      for (const fileId of fileIds) {
-        const file = await getFile(fileId)
-        const base64 = await getBase64(file)
-        base64Images.push(base64)
-      }
+    for (const fileId of fileIds) {
+      const file = await getFile(fileId)
+      const base64 = await getBase64(file)
+      base64Images.push(base64)
+    }
 
-      const generationResponse = (await generateBlendedImages(
-        base64Images,
-      )) as ReplicatePredictionResponse
+    const generationResponse = (await generateBlendedImages(
+      base64Images,
+    )) as ReplicatePredictionResponse
 
-      if (!generationResponse.success) {
-        throw new Error(IMAGE_GENERATION_ERROR_MESSAGE)
-      }
+    if (!generationResponse.success) {
+      throw new Error(IMAGE_GENERATION_ERROR_MESSAGE)
+    }
 
-      const id = generationResponse.id
-      console.log(`Generated image id: ${id}`);
-      return id;
+    const id = generationResponse.id
+    console.log(`Generated image id: ${id}`)
+    return id
   } catch (err) {
     console.error(err)
     const errorMessage = getErrorMessage(err)

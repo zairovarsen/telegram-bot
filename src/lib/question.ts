@@ -1,10 +1,9 @@
 import { TelegramBot } from '@/types'
-import { hget, lock } from '@/lib/redis'
+import { get, lock, set } from '@/lib/redis'
 import { createEmbedding } from '@/lib/openai'
 import {
   CONTEXT_TOKENS_CUTOFF,
   INTERNAL_SERVER_ERROR_MESSAGE,
-  MAX_TOKENS_COMPLETION,
   UNANSWERED_QUESTION_MESSAGE,
 } from '@/utils/constants'
 import { sendChatAction, sendMessage } from '@/lib/bot'
@@ -16,32 +15,21 @@ import {
   handleInsufficientTokens,
   updateUserTokensInRedisAndDb,
 } from '@/utils/handlers'
-import { llm, moderation } from './langchain'
+import { chat, llm } from './langchain'
+import {
+  checkContentForModeration,
+  getEstimatedTokens,
+  getUserTokens,
+  sanitizeInput,
+} from '@/utils/helpers'
+import {
+  SystemMessagePromptTemplate,
+  HumanMessagePromptTemplate,
+  ChatPromptTemplate,
+} from "langchain/prompts";
+import { qStash } from './qstash'
 
-// Function to get user tokens
-const getUserTokens = async (userKey: string) => {
-  return parseInt((await hget(userKey, 'tokens')) || '0');
-};
-
-// Function to check content moderation
-const checkContent = async (content: string) => {
-  await moderation.call({ input: content, throwError: true });
-};
-
-// Function to get estimated tokens
-const getEstimatedTokens = async (input: string) => {
-  return await llm.getNumTokens(input);
-};
-
-// Function to generate answer
-const generateAnswer = async (input: string) => {
-  return await llm.generate([input]);
-};
-
-const sanitizeInput = (input: string): string => input.replace(/(\r\n|\n|\r)/gm, '');
-
-
-/* Open AI Completion */
+/* Open AI Completion Api to answer any question */
 export const processGeneralQuestion = async (
   text: string,
   message: TelegramBot.Message,
@@ -59,20 +47,52 @@ export const processGeneralQuestion = async (
     let unlock = await lock(userLockResource)
 
     try {
-      const totalTokensRemaining = await getUserTokens(userKey);
-      const sanitizedQuestion = sanitizeInput(text);
+      const totalTokensRemaining = await getUserTokens(userKey)
+      const sanitizedQuestion = sanitizeInput(text)
 
-      await checkContent(sanitizedQuestion);
-      
-      const estimatedTokensForRequest =  await getEstimatedTokens(sanitizedQuestion);
+      await checkContentForModeration(sanitizedQuestion)
 
-      await handleInsufficientTokens(totalTokensRemaining, estimatedTokensForRequest);
+      const estimatedTokensForRequest = await getEstimatedTokens(
+        sanitizedQuestion,
+      )
+
+      await handleInsufficientTokens(
+        totalTokensRemaining,
+        estimatedTokensForRequest,
+      )
 
       if (!isNotTyping) {
         await sendChatAction(chatId, 'typing')
       }
 
-      const completion = await generateAnswer(sanitizedQuestion);
+      const previousQuestion = await get(`user:${userId}:last_question`)
+
+      const prompt = ChatPromptTemplate.fromPromptMessages([
+        SystemMessagePromptTemplate.fromTemplate(
+          "You are an intelligent AI agent who can answer any given question, who also has the information about previous question: {previous_question}  , which you can freely use if you wish."
+        ),
+        HumanMessagePromptTemplate.fromTemplate("{question}"),
+      ]);
+
+      const completion = await chat.generatePrompt([
+        await prompt.formatPromptValue({
+          previous_question: previousQuestion || "",
+          question: sanitizedQuestion,
+        }),
+      ]);
+
+      const qStashPublishResponse = await qStash.publishJSON({
+        url: `${process.env.QSTASH_URL}/qsummary` as string,
+        body: {
+          previousQuestion: previousQuestion || "",
+          question: sanitizedQuestion,
+          userId,
+        },
+      })
+
+      if (!qStashPublishResponse || !qStashPublishResponse.messageId) {
+        throw new Error('QStash Publish Response is undefined')
+      }
 
       await updateUserTokensInRedisAndDb(
         userId,
@@ -80,12 +100,11 @@ export const processGeneralQuestion = async (
         completion?.llmOutput?.tokenUsage.totalTokens || 0,
       )
 
+      await set(`user:${userId}:last_question`, sanitizedQuestion)
+
       const answer =
         completion?.generations[0][0].text || UNANSWERED_QUESTION_MESSAGE
       return answer
-    } catch (err) {
-      console.log(err);
-      await handleError(chatId, messageId, err)
     } finally {
       await unlock()
     }
@@ -110,10 +129,11 @@ export const processPdfQuestion = async (
   try {
     let unlock = await lock(userLockResource)
     try {
-      const totalTokensRemaining = await getUserTokens(userKey);
-      const sanitizedQuestion = sanitizeInput(text);
+      const totalTokensRemaining = await getUserTokens(userKey)
+      const sanitizedQuestion = sanitizeInput(text)
 
-      await checkContent(sanitizedQuestion);
+      await checkContentForModeration(sanitizedQuestion)
+
       await sendChatAction(chatId, 'typing')
 
       let embeddingResult: CreateEmbeddingResponse | null = null
@@ -182,11 +202,11 @@ export const processPdfQuestion = async (
       """
       `
 
-      const completion = await llm.generate([prompt]);
+      const completion = await llm.generate([prompt])
 
       const totalTokensUsed =
         totalTokensUsedForEmbeddingsRequest +
-        completion?.llmOutput?.tokenUsage.totalTokens || 0
+          completion?.llmOutput?.tokenUsage.totalTokens || 0
       await updateUserTokensInRedisAndDb(
         userId,
         totalTokensRemaining,
@@ -203,8 +223,6 @@ export const processPdfQuestion = async (
           reply_to_message_id: messageId,
         },
       )
-    } catch (err) {
-      await handleError(chatId, messageId, err)
     } finally {
       // Release the lock
       await unlock()

@@ -62,39 +62,39 @@ export async function handler(req: NextApiRequest, res: NextApiResponse) {
     }
     return
   } else if (conversionModel == ConversionModel.MJ_BLEND) {
-      const id = await blendImages(userId)
-      if (id) {
-        try {
-          const body = {
-            message: message,
-            userId,
-            taskId: id,
-          }
-  
-          const qStashPublishResponse = await qStash.publishJSON({
-            url: `${process.env.QSTASH_URL}/midjourney` as string,
-            body,
-            retries: 2,
-          })
-          if (!qStashPublishResponse || !qStashPublishResponse.messageId) {
-            await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
-              reply_to_message_id: messageId,
-            })
-          }
-          console.log(`QStash Response: ${qStashPublishResponse.messageId}`)
-        } catch (err) {
-          console.error(err)
+    const id = await blendImages(userId)
+    if (id) {
+      try {
+        const body = {
+          message: message,
+          userId,
+          taskId: id,
+        }
+
+        const qStashPublishResponse = await qStash.publishJSON({
+          url: `${process.env.QSTASH_URL}/midjourney` as string,
+          body,
+          retries: 2,
+        })
+        if (!qStashPublishResponse || !qStashPublishResponse.messageId) {
           await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
             reply_to_message_id: messageId,
           })
         }
-      } else {
-        await sendMessage(chatId, IMAGE_GENERATION_ERROR_MESSAGE, {
+        console.log(`QStash Response: ${qStashPublishResponse.messageId}`)
+      } catch (err) {
+        console.error(err)
+        await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
           reply_to_message_id: messageId,
         })
-      } 
+      }
+    } else {
+      await sendMessage(chatId, IMAGE_GENERATION_ERROR_MESSAGE, {
+        reply_to_message_id: messageId,
+      })
+    }
 
-      return;
+    return
   } else {
     image = await processImage(message, userId, conversionModel)
   }

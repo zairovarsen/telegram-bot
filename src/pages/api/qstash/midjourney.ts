@@ -7,7 +7,6 @@ import { pollMidJourney } from '@/lib/image'
 
 export async function handler(req: NextApiRequest, res: NextApiResponse) {
   const body = req.body
-  const startTime = performance.now()
 
   const { message, userId, taskId } = body
   const {
@@ -16,7 +15,7 @@ export async function handler(req: NextApiRequest, res: NextApiResponse) {
   } = message
 
   let image
-  image = await pollMidJourney(userId, taskId);
+  image = await pollMidJourney(userId, taskId)
 
   if (!image.success) {
     await sendMessage(chatId, image.errorMessage, {
@@ -32,9 +31,6 @@ export async function handler(req: NextApiRequest, res: NextApiResponse) {
       `Remaining imageGenerations: ${image.imageGenerationsRemaining || 0}`,
     )
   }
-  const endTime = performance.now()
-  const elapsedTime = endTime - startTime
-  console.log(`Elapsed time: ${elapsedTime} ms`)
   res.status(200).send('OK')
 }
 

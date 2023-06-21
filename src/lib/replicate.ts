@@ -34,14 +34,14 @@ const makeRequest = async (
     if (response.status !== 201) {
       const error = await response.json()
       console.error(`Issue with replicate API call: ${error.detail}`)
-      return { success: false, errorMessage: IMAGE_GENERATION_ERROR_MESSAGE}
+      return { success: false, errorMessage: IMAGE_GENERATION_ERROR_MESSAGE }
     }
 
     const prediction = await response.json()
     return { success: true, id: prediction.id }
   } catch (err) {
     const message = getErrorMessage(err)
-    console.error(err);
+    console.error(err)
     return { success: false, errorMessage: IMAGE_GENERATION_ERROR_MESSAGE }
   }
 }
@@ -140,26 +140,28 @@ export const getImageStatus = async (id: string): Promise<string> => {
 
 /* Blend 2 base 64 images */
 export const generateBlendedImages = async (
-  base64Array: string[]
+  base64Array: string[],
 ): Promise<ReplicatePredictionResponse> => {
- 
-  const response = await fetch(`${process.env.MIDJOURNEY_RAILWAY_PROXY}/mj/submit/blend`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'mj-api-secret': process.env.MIDJOURNEY_RAILWAY_PROXY_SECRET as string,
+  const response = await fetch(
+    `${process.env.MIDJOURNEY_RAILWAY_PROXY}/mj/submit/blend`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'mj-api-secret': process.env.MIDJOURNEY_RAILWAY_PROXY_SECRET as string,
+      },
+      body: JSON.stringify({
+        base64Array,
+      }),
     },
-    body: JSON.stringify({
-      base64Array
-    }),
-  })
+  )
   if (response.status !== 200) {
     const error = await response.json()
     console.error(`Issue with midjourney API call: ${error.detail}`)
-    return { success: false, errorMessage: IMAGE_GENERATION_ERROR_MESSAGE}
-  }  
+    return { success: false, errorMessage: IMAGE_GENERATION_ERROR_MESSAGE }
+  }
 
-  const prediction = await response.json() 
+  const prediction = await response.json()
   return { success: true, id: prediction.result }
 }
 
@@ -167,44 +169,50 @@ export const generateBlendedImages = async (
 export const generateMidjourneyImage = async (
   prompt: string,
 ): Promise<ReplicatePredictionResponse> => {
-  const response = await fetch(`${process.env.MIDJOURNEY_RAILWAY_PROXY}/mj/submit/imagine`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'mj-api-secret': process.env.MIDJOURNEY_RAILWAY_PROXY_SECRET as string,
+  const response = await fetch(
+    `${process.env.MIDJOURNEY_RAILWAY_PROXY}/mj/submit/imagine`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'mj-api-secret': process.env.MIDJOURNEY_RAILWAY_PROXY_SECRET as string,
+      },
+      body: JSON.stringify({
+        prompt,
+      }),
     },
-    body: JSON.stringify({
-      prompt
-    }),
-  })
+  )
 
   if (response.status !== 200) {
     const error = await response.json()
     console.error(`Issue with midjourney API call: ${error.detail}`)
-    return { success: false, errorMessage: IMAGE_GENERATION_ERROR_MESSAGE}
-  }  
+    return { success: false, errorMessage: IMAGE_GENERATION_ERROR_MESSAGE }
+  }
 
-  const prediction = await response.json() 
+  const prediction = await response.json()
   return { success: true, id: prediction.result }
 }
 
 /* Check proxy task of midjournmey image generation */
-export const getMidjourneyImage = async (id: string): Promise<string> => { 
-  return await fetch(`${process.env.MIDJOURNEY_RAILWAY_PROXY}/mj/task/${id}/fetch`, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      'mj-api-secret': process.env.MIDJOURNEY_RAILWAY_PROXY_SECRET as string,
+export const getMidjourneyImage = async (id: string): Promise<string> => {
+  return await fetch(
+    `${process.env.MIDJOURNEY_RAILWAY_PROXY}/mj/task/${id}/fetch`,
+    {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'mj-api-secret': process.env.MIDJOURNEY_RAILWAY_PROXY_SECRET as string,
+      },
     },
-  })
+  )
     .then(r => r.json())
     .then(finalResponse => {
-      const jsonFinalResponse = finalResponse as MidJourneyProxyTaskResponse;
-      const status = jsonFinalResponse.status;
+      const jsonFinalResponse = finalResponse as MidJourneyProxyTaskResponse
+      const status = jsonFinalResponse.status
       if (status == 'SUCCESS') {
-         return jsonFinalResponse.imageUrl 
+        return jsonFinalResponse.imageUrl
       } else {
         throw new Error('Image generation failed')
-      } 
+      }
     })
 }

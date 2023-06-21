@@ -1,6 +1,10 @@
-import { GENERATED_MEME_MESSAGE, MEME_OPTIONS } from './../utils/constants'
+import {
+  GENERATED_MEME_MESSAGE,
+  MEME_OPTIONS,
+  UNANSWERED_QUESTION_MESSAGE,
+} from './../utils/constants'
 import { TelegramBot } from '@/types'
-import { hget, lock } from './redis'
+import { lock } from './redis'
 import { sendDocument, sendMessage } from './bot'
 import {
   CONTEXT_TOKENS_CUTOFF,
@@ -8,23 +12,17 @@ import {
 } from '@/utils/constants'
 import { estimateEmbeddingTokens } from '@/utils/tokenizer'
 import {
-  handleCompletion,
   handleError,
   handleInsufficientTokens,
-  handleModeration,
   updateUserTokensInRedisAndDb,
 } from '@/utils/handlers'
+import { chat } from './langchain'
+import { HumanChatMessage, SystemChatMessage } from 'langchain/schema'
+import { getUserTokens, sanitizeInput } from '@/utils/helpers'
 
 export type MemeType = (typeof MEME_OPTIONS)[number]['name']
 
-/**
- * Process PDF question using OpenAI completion and embeddings API
- *
- * @param text
- * @param message
- * @param userId
- * @returns
- */
+/* Meme generation using open ai completion, and imgflip api */
 export const processMemeGeneration = async (
   text: string,
   memeType: MemeType,
@@ -39,30 +37,11 @@ export const processMemeGeneration = async (
   } = message
 
   try {
-    let unlock
-    try {
-      unlock = await lock(userLockResource)
-    } catch (err) {
-      console.error('Error acquiring lock', err)
-      // Consider implementing retry logic here, or a specific error message.
-      return
-    }
+    let unlock = await lock(userLockResource)
 
     try {
-      const totalTokensRemaining = parseInt(
-        (await hget(userKey, 'tokens')) || '0',
-      )
-
-      const sanitizedInput = text.replace(/(\r\n|\n|\r)/gm, '')
-
-      if (!sanitizedInput.trim()) {
-        await sendMessage(chatId, 'Input is empty or contains whitespace', {
-          reply_to_message_id: messageId,
-        })
-        return
-      }
-
-      await handleModeration(sanitizedInput)
+      const totalTokensRemaining = await getUserTokens(userKey)
+      const sanitizedInput = sanitizeInput(text)
 
       const estimatedTokensForEmbeddingsRequest =
         estimateEmbeddingTokens(sanitizedInput)
@@ -77,23 +56,25 @@ export const processMemeGeneration = async (
         sanitizedInput +
         '. do not return any explaination, just return the list. only return one list. make it funny.'
 
-      const completion = await handleCompletion(prompt, false, [
-        {
-          role: 'system',
-          content: `I am creating a ${memeType} meme. In this meme, Drake disapproves of the first option and approves of the second option. Please provide two short phrases or words for each option, where the first phrase represents a less desirable approach and the second phrase is the more desirable approach. Format your response as a Javascript list, like this: [option1, option2]`,
-        },
-        { role: 'user', content: prompt },
+      const completion = await chat.generate([
+        [
+          new SystemChatMessage(
+            `I am creating a ${memeType} meme. In this meme, Drake disapproves of the first option and approves of the second option. Please provide two short phrases or words for each option, where the first phrase represents a less desirable approach and the second phrase is the more desirable approach. Format your response as a Javascript list, like this: [option1, option2]`,
+          ),
+          new HumanChatMessage(prompt),
+        ],
       ])
 
       await updateUserTokensInRedisAndDb(
         userId,
         totalTokensRemaining,
-        completion?.usage?.total_tokens || 0,
+        completion?.llmOutput?.tokenUsage.totalTokens || 0,
       )
 
       const regex = /"((?:\\"|[^"])*)"/g
 
-      const content = completion.choices[0].message?.content as string
+      const content =
+        completion?.generations[0][0].text || UNANSWERED_QUESTION_MESSAGE
 
       const match = content.match(regex)
 

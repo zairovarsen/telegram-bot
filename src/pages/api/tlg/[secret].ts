@@ -61,14 +61,7 @@ import {
   getUserDistinctUrls,
   updateImageAndTokensTotal,
 } from '@/lib/supabase'
-import {
-  del,
-  get,
-  getRedisClient,
-  lock,
-  safeGetObject,
-  set,
-} from '@/lib/redis'
+import { del, get, getRedisClient, lock, safeGetObject, set } from '@/lib/redis'
 import { MemeType, processMemeGeneration } from '@/lib/meme'
 import { handleAudioRequest } from '@/lib/audio'
 import {
@@ -77,7 +70,6 @@ import {
   executeTaskAgent,
   startGoalAgent,
 } from '@/lib/agent'
-
 
 export const config = {
   runtime: 'edge',
@@ -316,21 +308,21 @@ You have access to:
         })
       } else if (message.photo) {
         const fileId = message.photo[message.photo.length - 1].file_id
-        let response = await get(`images:${userId}`); 
-        let images = [];
+        let response = await get(`images:${userId}`)
+        let images = []
 
         if (response) {
-          images = JSON.parse(JSON.stringify(response));
+          images = JSON.parse(JSON.stringify(response))
           console.log(images)
         }
 
         if (images.length >= 2) {
-          images = images.slice(1);
+          images = images.slice(1)
         }
 
-        images.push(fileId);
-        await set(`images:${userId}`, JSON.stringify(images));
-        
+        images.push(fileId)
+        await set(`images:${userId}`, JSON.stringify(images))
+
         await sendMessage(chatId, IMAGE_GENERATION_MESSAGE, {
           reply_to_message_id: message_id,
           reply_markup: {
@@ -607,11 +599,7 @@ You have access to:
           await sendMessage(chatId, answer, {
             reply_to_message_id: messageId,
           })
-        } else {
-          await sendMessage(chatId, INTERNAL_SERVER_ERROR_MESSAGE, {
-            reply_to_message_id: messageId,
-          })
-        }
+        } 
       } else if (text && data == 'Ask Steve Jobs') {
         await handleAudioRequest(
           userId,
@@ -860,9 +848,9 @@ ${allTasks
       ) {
         try {
           let body = {}
-          
+
           if (data == 'Blend') {
-            let response = await get(`images:${userId}`);
+            let response = await get(`images:${userId}`)
             if (!response) {
               await sendMessage(chatId, 'Please send me two images first.', {
                 reply_to_message_id: messageId,
@@ -870,7 +858,7 @@ ${allTasks
               return
             }
 
-            const images = JSON.parse(JSON.stringify(response));
+            const images = JSON.parse(JSON.stringify(response))
             if (images.length < 2) {
               await sendMessage(chatId, 'Please send me two images first.', {
                 reply_to_message_id: messageId,

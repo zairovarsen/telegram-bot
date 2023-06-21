@@ -22,7 +22,11 @@ const configuration = new Configuration({
 
 const openai = new OpenAIApi(configuration)
 
-export type OpenAIModel = 'gpt-4' | 'gpt-3.5-turbo' | 'text-davinci-003'
+export type OpenAIModel =
+  | 'gpt-4'
+  | 'gpt-3.5-turbo'
+  | 'text-davinci-003'
+  | 'gpt-3.5-turbo-16k'
 
 /**
  * Create a moderation request

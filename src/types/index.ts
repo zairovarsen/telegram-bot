@@ -1,20 +1,20 @@
 import { SelectUser } from '@/lib/supabase'
-import {  Readable, Stream } from 'stream'
+import { Readable, Stream } from 'stream'
 
 export type MidJourneyProxyTaskResponse = {
-  action: string;
-  description: string;
-  failReason: string;
-  finishTime: number;
-  id: string;
-  imageUrl: string;
-  progress: string;
-  prompt: string;
-  promptEn: string;
-  startTime: number;
-  state: string;
-  status: string;
-  submitTime: number;
+  action: string
+  description: string
+  failReason: string
+  finishTime: number
+  id: string
+  imageUrl: string
+  progress: string
+  prompt: string
+  promptEn: string
+  startTime: number
+  state: string
+  status: string
+  submitTime: number
 }
 
 export type Embedding = {

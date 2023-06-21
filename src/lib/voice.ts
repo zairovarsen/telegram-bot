@@ -57,8 +57,7 @@ const handleQuestionType = async (
       question,
       process.env.BEN_SHAPIRO_VOICE_ID as string,
     )
-  }
-   else {
+  } else {
     const id = await processImagePromptOpenJourney(question)
     if (id) {
       try {

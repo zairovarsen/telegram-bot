@@ -1,5 +1,5 @@
 import { sendMessage } from '@/lib/bot'
-import { createCompletion, createModeration, getPayload } from '@/lib/openai'
+import { createModeration, getPayload } from '@/lib/openai'
 import {
   COMPLETION_GENERATION_ERROR_MESSAGE,
   INSUFFICIENT_TOKENS_MESSAGE,
@@ -8,7 +8,6 @@ import {
 } from './constants'
 import { updateUserTokens } from '@/lib/supabase'
 import { getRedisClient } from '@/lib/redis'
-import { ChatCompletionRequestMessage } from 'openai'
 
 export const handleError = async (
   chatId: number,
@@ -40,16 +39,6 @@ export function getErrorMessage(error: unknown) {
   return String(error)
 }
 
-/* Open AI moderation to prevent illegal questions */
-export const handleModeration = async (sanitizedQuestion: string) => {
-  const moderationReponse = await createModeration({
-    input: sanitizedQuestion,
-  })
-  if (moderationReponse?.results?.[0]?.flagged) {
-    throw Error(MODERATION_ERROR_MESSAGE)
-  }
-}
-
 /* Insufficient tokens */
 export const handleInsufficientTokens = async (
   totalTokensRemaining: number,
@@ -58,25 +47,6 @@ export const handleInsufficientTokens = async (
   if (totalTokensRemaining < estimatedTokensForRequest) {
     throw Error(INSUFFICIENT_TOKENS_MESSAGE)
   }
-}
-
-/* Completion */
-export const handleCompletion = async (
-  sanitizedQuestion: string,
-  stream?: boolean,
-  messageCustom?: ChatCompletionRequestMessage[],
-) => {
-  const body = getPayload(
-    sanitizedQuestion,
-    'gpt-3.5-turbo',
-    stream,
-    messageCustom,
-  )
-  const completion = await createCompletion(body)
-  if (!completion) {
-    throw Error(COMPLETION_GENERATION_ERROR_MESSAGE)
-  }
-  return completion
 }
 
 /* Supabase update user tokens and Redis update user tokens */
